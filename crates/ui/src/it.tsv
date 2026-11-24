@@ -337,3 +337,5 @@ The other program's library and files are only read, never changed.	La libreria 
 With a file on this computer: {}. Without: {}.	Con il file su questo computer: {}. Senza: {}.
 this is not an exported library	questa non è una libreria esportata
 the exported library has no songs	la libreria esportata non contiene brani
+the exported library is too large	la libreria esportata è troppo grande
+the catalogue is too large to be saved	il catalogo è troppo grande per essere salvato

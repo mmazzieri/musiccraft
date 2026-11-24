@@ -16,6 +16,13 @@ use std::path::{Path, PathBuf};
 /// The largest file read. A library of 100,000 songs is about 150 MB.
 pub const MAX_FILE: u64 = 512 * 1024 * 1024;
 const MAX_NODES: usize = 8_000_000;
+/// What is taken from the file is bounded too, so that the catalogue stays within what it can read.
+const MAX_SONGS: usize = 200_000;
+const MAX_LISTS: usize = 5_000;
+const MAX_ITEMS: usize = 1_000_000;
+const MAX_TEXT: usize = 48 * 1024 * 1024;
+const MAX_NAME: usize = 400;
+const TOO_LARGE: &str = "the exported library is too large";
 
 /// A song of the exported library.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -46,7 +53,8 @@ pub struct Exported {
 }
 
 fn text(v: &Value, key: &str) -> String {
-    v.get(key).and_then(Value::as_str).map(str::trim).unwrap_or("").to_owned()
+    let t = v.get(key).and_then(Value::as_str).unwrap_or("").trim();
+    t.chars().filter(|c| !c.is_control()).take(MAX_NAME).collect()
 }
 
 fn number(v: &Value, key: &str) -> u64 {
@@ -91,7 +99,12 @@ pub fn parse(bytes: &[u8], path: &Path) -> Result<Exported, String> {
     let root = craft_plist::parse_xml_with_options(bytes, limits, XmlOptions::default())
         .map_err(|e| format!("{WRONG}: {e}"))?;
     let Some(Value::Dict(tracks)) = root.get("Tracks") else { return Err(WRONG.to_owned()) };
-    let moved = Moved::new(&text(&root, "Music Folder"), path);
+    let long = |v: &Value, key: &str| -> String {
+        // Addresses may be longer than names.
+        v.get(key).and_then(Value::as_str).filter(|s| s.len() <= 8_192).unwrap_or("").to_owned()
+    };
+    let moved = Moved::new(&long(&root, "Music Folder"), path);
+    let mut bytes_of_text = 0usize;
     let mut out = Exported::default();
     let mut kept = HashSet::new();
     for (_, t) in tracks {
@@ -129,8 +142,15 @@ pub fn parse(bytes: &[u8], path: &Path) -> Result<Exported, String> {
             last_played: date(t, "Play Date UTC"),
         };
         let song = number(t, "Track ID");
+        bytes_of_text += [&info.title, &info.artist, &info.album_artist, &info.album, &info.genre, &info.composer]
+            .iter()
+            .map(|s| s.len())
+            .sum::<usize>();
+        if out.songs.len() >= MAX_SONGS || bytes_of_text > MAX_TEXT {
+            return Err(TOO_LARGE.to_owned());
+        }
         kept.insert(song);
-        out.songs.push(Song { number: song, info, history, file: moved.find(&text(t, "Location")) });
+        out.songs.push(Song { number: song, info, history, file: moved.find(&long(t, "Location")) });
     }
     let empty = Vec::new();
     let lists = match root.get("Playlists") {
@@ -143,6 +163,7 @@ pub fn parse(bytes: &[u8], path: &Path) -> Result<Exported, String> {
         .filter(|l| flag(l, "Folder"))
         .map(|l| (text(l, "Playlist Persistent ID"), (text(l, "Name"), text(l, "Parent Persistent ID"))))
         .collect();
+    let mut all_items = 0usize;
     for l in lists {
         let built_in = flag(l, "Master") || flag(l, "Folder") || l.get("Distinguished Kind").is_some();
         let hidden = matches!(l.get("Visible"), Some(Value::Bool(false)));
@@ -151,12 +172,19 @@ pub fn parse(bytes: &[u8], path: &Path) -> Result<Exported, String> {
         if built_in || hidden || songs.is_empty() {
             continue;
         }
+        all_items += songs.len();
+        if out.lists.len() >= MAX_LISTS || all_items > MAX_ITEMS {
+            return Err(TOO_LARGE.to_owned());
+        }
         let mut name = text(l, "Name");
         let mut parent = text(l, "Parent Persistent ID");
         // Folders that contain each other would never end.
-        for _ in 0..16 {
-            let Some((folder, up)) = folders.get(&parent) else { break };
-            name = format!("{folder} / {name}");
+        let mut seen = HashSet::new();
+        while let Some((folder, up)) = folders.get(&parent).filter(|_| seen.len() < 16) {
+            if !seen.insert(parent.clone()) {
+                break;
+            }
+            name = format!("{folder} / {name}").chars().take(MAX_NAME).collect();
             parent.clone_from(up);
         }
         let id = text(l, "Playlist Persistent ID");
@@ -192,7 +220,7 @@ impl Moved {
         // Files on other computers are refused: a library from someone else must not make this
         // computer sign in to theirs.
         if let Ok(p) = craft_docpath::resolve_absolute(location, None)
-            && p.is_file()
+            && is_local_file(&p)
         {
             return Some(p);
         }
@@ -202,8 +230,39 @@ impl Moved {
         if parts.iter().any(|p| p == "." || p == ".." || p.contains(['/', '\\', ':', '\0'])) {
             return None;
         }
-        self.places.iter().map(|d| parts.iter().fold(d.clone(), |d, p| d.join(p))).find(|p| p.is_file())
+        self.places.iter().map(|d| parts.iter().fold(d.clone(), |d, p| d.join(p))).find(|p| is_local_file(p))
     }
+}
+
+/// Whether a file is there and reading it stays on this computer. Links on the way are followed only
+/// when they lead to a local place, and each is looked at before anything behind it is touched.
+pub fn is_local_file(path: &Path) -> bool {
+    stays_local(path, 8) && path.is_file()
+}
+
+fn stays_local(path: &Path, links_left: usize) -> bool {
+    let mut at = PathBuf::new();
+    for part in path.components() {
+        let parent = at.clone();
+        at.push(part);
+        let Ok(meta) = std::fs::symlink_metadata(&at) else {
+            // A drive prefix alone has no metadata; anything else that cannot be looked at is refused.
+            if matches!(part, std::path::Component::Prefix(_)) {
+                continue;
+            }
+            return false;
+        };
+        if !meta.is_symlink() {
+            continue;
+        }
+        let Ok(target) = std::fs::read_link(&at) else { return false };
+        let local = target.to_str().is_some_and(craft_docpath::is_local);
+        let target = if target.is_absolute() { target } else { parent.join(target) };
+        if !local || links_left == 0 || !stays_local(&target, links_left - 1) {
+            return false;
+        }
+    }
+    true
 }
 
 /// Undoes `%20` and the like.
@@ -301,6 +360,24 @@ mod tests {
         assert_eq!(parse(&plist(&song(1, ""), &lists), x).unwrap().lists.len(), 1);
     }
 
+    /// Names are cut and cleaned, and a file that would fill the catalogue is refused.
+    #[test]
+    fn what_is_taken_is_bounded() {
+        let x = Path::new("x.xml");
+        let folder = format!("<key>Folder</key><true/><key>Name</key><string>{}</string>", "f".repeat(5_000));
+        let lists = [
+            list(&"f".repeat(5_000), "A", &folder, &[]),
+            list(&"c".repeat(5_000), "C", "<key>Parent Persistent ID</key><string>A</string>", &[1]),
+        ]
+        .concat();
+        let track = song(1, &format!("<key>Artist</key><string>{}&#10;x</string>", "a".repeat(5_000)));
+        let e = parse(&plist(&track, &lists), x).unwrap();
+        assert!(e.lists[0].name.len() < 1_000 && e.songs[0].info.artist.len() < 1_000);
+        let many: Vec<u32> = vec![1; 11_000];
+        let lists: String = (0..100).map(|i| list("x", &format!("L{i}"), "", &many)).collect();
+        assert!(parse(&plist(&song(1, ""), &lists), x).is_err());
+    }
+
     /// Files that moved together with the library are found beside it; a location cannot lead to
     /// another computer or out of the folder.
     #[test]
@@ -320,6 +397,15 @@ mod tests {
             ["file://server/share/x.mp3", "file:////server/share/x.mp3", "http://x/y.mp3", "\\\\server\\x.mp3", ""]
         {
             assert!(m.find(bad).is_none(), "{bad}");
+        }
+        // A link beside the library cannot lead to another computer.
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("//server/share", dir.path().join("iTunes Media/away")).unwrap();
+            std::os::unix::fs::symlink(dir.path().join("iTunes Media/Music"), dir.path().join("iTunes Media/near"))
+                .unwrap();
+            assert!(m.find(&format!("{base}/away/x.mp3")).is_none());
+            assert!(m.find(&format!("{base}/near/Ada%20%C3%88/01%20S%25.mp3")).is_some());
         }
         // A path of this computer, as the library writes it.
         let plain = file
