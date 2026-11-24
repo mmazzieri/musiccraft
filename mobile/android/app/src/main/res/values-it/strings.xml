@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="welcome">Scegli la cartella di MusicCraft: quella con dentro Music e Library, condivisa dai tuoi computer. Sul telefono può stare in un\'app di sincronizzazione che offre le sue cartelle alle altre app, oppure sul telefono stesso.</string>
+    <string name="choose_folder">Scegli la cartella</string>
+    <string name="change_folder">Cambia cartella</string>
+    <string name="reload">Rileggi</string>
+    <string name="albums">Album</string>
+    <string name="songs">Brani</string>
+    <string name="playlists">Playlist</string>
+    <string name="search">Cerca</string>
+    <string name="back">Indietro</string>
+    <string name="play">Riproduci</string>
+    <string name="pause">Pausa</string>
+    <string name="next">Successivo</string>
+    <string name="previous">Precedente</string>
+    <string name="love">Amato</string>
+    <string name="loved">Amato</string>
+    <string name="not_here">Non è su questo telefono</string>
+    <string name="smart">Playlist smart</string>
+    <string name="rating">Valutazione</string>
+    <string name="stars">%1$d stelle</string>
+    <string name="no_rating">Nessuna valutazione</string>
+    <string name="close">Chiudi</string>
+    <string name="reading">Lettura della libreria…</string>
+    <string name="empty">Ancora nessun brano. Aggiungi musica da un computer, oppure metti dei file nella cartella Music.</string>
+    <string name="unknown_artist">Artista sconosciuto</string>
+    <string name="unknown_album">Album sconosciuto</string>
+    <string name="unreadable">Alcuni file non sono stati letti: %1$s</string>
+</resources>

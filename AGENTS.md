@@ -67,9 +67,9 @@ The key words MUST, MUST NOT, SHOULD, SHOULD NOT and MAY are used as in RFC 2119
 
 MusicCraft is an independent community app that follows the Craft rules. The repository is `mmazzieri/musiccraft`.
 
-- Layout: `crates/library` (folder, catalogue, merge, scan, tags, playlists, queries; no network), `crates/player` (audio thread, network streams), `crates/services` (Subsonic, radio, Spotify, credential store), `crates/engine` (commands, play queue, settings, background work; no interface), `crates/ui` (egui), `crates/cli`, `crates/xtask`, and the desktop shell in `src/`. `library`, `player` and `services` do not depend on each other; the engine joins them.
+- Layout: `crates/library` (folder, catalogue, merge, scan, tags, playlists, queries; no network), `crates/player` (audio thread, network streams), `crates/services` (Subsonic, radio, Spotify, credential store), `crates/engine` (commands, play queue, settings, background work; no interface), `crates/ui` (egui), `crates/cli`, `crates/xtask`, and the desktop shell in `src/`. The phone apps are in `mobile/` (Kotlin and Swift), on `crates/ffi`, the library behind one JSON call ([docs/mobile.md](docs/mobile.md)). `library`, `player` and `services` do not depend on each other; the engine joins them.
 - Checks: `cargo xtask ci` (fmt, clippy with `-D warnings`, tests), `cargo deny check licenses bans sources`.
-- `unsafe`: forbidden; no module uses it. Every crate root declares the clippy deny attributes.
+- `unsafe`: forbidden, except in `crates/ffi/src/android.rs` and `crates/ffi/src/c.rs`, which name the functions for Java and C and pass C strings; each block has its `// SAFETY:` comment. Every crate root declares the clippy deny attributes.
 - Every change of state goes through `musiccraft_engine::Command`. Panels never write to the library or the player themselves; settings of this computer go through `Engine::change_settings`.
 - Colours and sizes come from `crates/ui/src/theme.rs`, which tests their contrast.
 - Languages: English in the code is the key, through `Lang::t`, `f`, `f2` and `n`. A new string needs its row in `crates/ui/src/it.tsv`; a test checks it.
@@ -78,4 +78,4 @@ MusicCraft is an independent community app that follows the Craft rules. The rep
 - Spotify: Web API and, when the person installed it, Soloist. Never download, bundle or redistribute Soloist; never decode, record or cache Spotify's audio. No unofficial interface of any service.
 - Library songs: an id never changes with the service. Links are per service; only `Service::Open` sites' own pages are opened, checked by `Site::accepts`. A match below the threshold in `matching.rs` is never played. No service is put in use for the person, except their only personal server.
 - Attribution file: `ATTRIBUTION.md`. After a change of dependencies run `python3 tools/licences.py`.
-- Departures from the shared rules: workflows do not call craft-common-actions yet, because they are for repositories of storytold; translations are in the app, because craft-i18n serves the storytold apps.
+- Departures from the shared rules: workflows do not call craft-common-actions yet, because they are for repositories of storytold; translations are in the app, because craft-i18n serves the storytold apps; the phone apps' screens are Kotlin and Swift (rule 11), because playing in the background, the system's media controls and folder access need the phones' own interfaces, while everything about the library stays in Rust.
