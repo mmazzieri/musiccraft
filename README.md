@@ -48,6 +48,12 @@ app, and it is not affiliated with ArtCraft, Apple or Spotify. Other projects us
   this computer through Spotify Soloist if you install it.
 - English and Italian; light, dark or the system's theme; keyboard use and an accessibility tree.
 
+## On phones
+
+`mobile/` holds the first Android and iOS apps: they open the same shared folder, show albums, songs and
+playlists, play the songs whose file is on the phone in the background, and count plays, love and ratings
+like a computer does. There are no packages yet: build them as [docs/mobile.md](docs/mobile.md) says.
+
 ## What it does not do
 
 - **TIDAL, Apple Music, Deezer, YouTube Music and Amazon Music** are not signed in to, searched or played
@@ -57,8 +63,8 @@ app, and it is not affiliated with ArtCraft, Apple or Spotify. Other projects us
   Client ID). Its developer policy restricts products that integrate other services' streams, so it is
   never the service in use unless you choose it. MusicCraft does not decode, record or download Spotify's audio. Spotify lists only the
   contents of playlists you own or work on.
-- No Opus, WMA, APE or DSD, no HE-AAC at its full bandwidth, no equalizer, no CD ripping or burning, no phone
-  sync, no podcasts, no lyrics.
+- No Opus, WMA, APE or DSD, no HE-AAC at its full bandwidth, no equalizer, no CD ripping or burning, no copying
+  to music players (the phone apps share the folder instead), no podcasts, no lyrics.
 - It does not read other programs' databases, only the library they export. Films, podcasts, audiobooks and
   protected files are left out or added without the file; smart playlists become ordinary ones.
 - No web build and no MCP server yet; the command line runs every command of the engine.

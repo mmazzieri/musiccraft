@@ -7,6 +7,11 @@ targets = [
     "aarch64-pc-windows-msvc",
     "x86_64-apple-darwin",
     "aarch64-apple-darwin",
+    # The phone apps' library (crates/ffi).
+    "aarch64-linux-android",
+    "x86_64-linux-android",
+    "aarch64-apple-ios",
+    "aarch64-apple-ios-sim",
 ]
 
 [licenses]

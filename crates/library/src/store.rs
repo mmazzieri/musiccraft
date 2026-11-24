@@ -146,7 +146,23 @@ impl Library {
         for dir in [root.join("Music"), root.join("Library"), local.to_owned()] {
             std::fs::create_dir_all(&dir).map_err(io(&dir))?;
         }
-        let mut lib = Library {
+        let mut lib = Library::blank(root, local, device, device_name);
+        lib.load_own();
+        lib.reload();
+        Ok(lib)
+    }
+
+    /// A library without a folder: its catalogue files go in and out as bytes, through
+    /// [`Library::load_bytes`], [`Library::unsaved`] and [`Library::mark_saved`]. The phone apps
+    /// use it (`crates/ffi`); their own code reads and writes the shared folder. Nothing here
+    /// touches a file: the methods that would ([`Library::save`], [`Library::refresh`],
+    /// [`Library::edit`], [`Library::file`]) are not for it.
+    pub fn detached(device: &str, device_name: &str) -> Library {
+        Library::blank(Path::new(""), Path::new(""), device, device_name)
+    }
+
+    fn blank(root: &Path, local: &Path, device: &str, device_name: &str) -> Library {
+        Library {
             root: root.to_owned(),
             local: local.to_owned(),
             device: device.to_owned(),
@@ -165,10 +181,83 @@ impl Library {
             warnings: Vec::new(),
             clock: 0,
             revision: 0,
-        };
-        lib.load_own();
-        lib.reload();
-        Ok(lib)
+        }
+    }
+
+    /// The names of this computer's three files in `Library/`.
+    pub fn own_names(&self) -> Vec<String> {
+        SECTIONS.iter().map(|s| format!("{}.{}.json", self.device, s.name())).collect()
+    }
+
+    /// Reads a catalogue from bytes, as [`Library::open`] reads it from a folder: `files` are the
+    /// `*.json` files of `Library/`, `backups` this computer's own copy of its files. This
+    /// computer's file is taken from the shared folder when it can be read, else from the copy.
+    /// Gives back the names of this computer's files that are damaged: they must be set aside
+    /// (renamed) before they are written again.
+    pub fn load_bytes(&mut self, files: &[(String, Vec<u8>)], backups: &[(String, Vec<u8>)]) -> Vec<String> {
+        self.warnings.clear();
+        let mut set_aside = Vec::new();
+        let names = self.own_names();
+        for (i, (section, name)) in SECTIONS.into_iter().zip(&names).enumerate() {
+            let backup = || backups.iter().find(|(n, _)| n == name).and_then(|(_, b)| parse(b).ok());
+            let (data, dirty) = match files.iter().find(|(n, _)| n == name).map(|(_, b)| parse(b)) {
+                Some(Ok(data)) => (Some(data), false),
+                Some(Err(e)) => {
+                    // Damaged, or half synced: set aside by the caller instead of written over.
+                    self.warnings.push(format!("{name}: {e}"));
+                    set_aside.push(name.clone());
+                    (backup(), false)
+                }
+                None => (backup(), true),
+            };
+            let slot = self.own.get_mut(i);
+            match (data.filter(|d| d.section == section && d.device == self.device), slot) {
+                (Some(data), Some(slot)) => {
+                    *slot = data;
+                    slot.device_name.clone_from(&self.device_name);
+                    if let Some(d) = self.dirty.get_mut(i) {
+                        *d = dirty;
+                    }
+                }
+                (None, Some(slot)) => *slot = empty(section, &self.device, &self.device_name),
+                _ => {}
+            }
+        }
+        self.merged.clear();
+        self.counts.clear();
+        for data in self.own.clone() {
+            self.absorb(data);
+        }
+        for (name, bytes) in files.iter().filter(|(n, _)| n.ends_with(".json") && !names.contains(n)) {
+            match parse(bytes) {
+                Ok(data) => self.absorb(data),
+                Err(e) => self.warnings.push(format!("{name}: {e}")),
+            }
+        }
+        self.rebuild();
+        set_aside
+    }
+
+    /// This computer's files that changed since they were written, by name, with their bytes.
+    pub fn unsaved(&self) -> Result<Vec<(String, Vec<u8>)>, LibraryError> {
+        let mut out = Vec::new();
+        for (i, name) in self.own_names().into_iter().enumerate() {
+            if self.dirty.get(i).copied().unwrap_or(false)
+                && let Some(data) = self.own.get(i)
+            {
+                out.push((name, serde_json::to_vec(data).map_err(|e| LibraryError::Other(e.to_string()))?));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Notes that one of this computer's files, named as [`Library::unsaved`] names it, was written.
+    pub fn mark_saved(&mut self, name: &str) {
+        if let Some(i) = self.own_names().iter().position(|n| n == name)
+            && let Some(d) = self.dirty.get_mut(i)
+        {
+            *d = false;
+        }
     }
 
     pub fn root(&self) -> &Path {
@@ -925,8 +1014,15 @@ fn read_file(path: &Path) -> Result<FileData, String> {
     if meta.len() > MAX_FILE {
         return Err("the file is too large".to_owned());
     }
-    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
-    let data: FileData = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    parse(&std::fs::read(path).map_err(|e| e.to_string())?)
+}
+
+/// A catalogue file's bytes, read. Refuses anything this version does not know.
+fn parse(bytes: &[u8]) -> Result<FileData, String> {
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_FILE {
+        return Err("the file is too large".to_owned());
+    }
+    let data: FileData = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
     if data.format != FORMAT {
         return Err("not a MusicCraft library file".to_owned());
     }
