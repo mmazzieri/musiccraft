@@ -214,6 +214,15 @@ impl Engine {
         Self::with(dir, settings, false)
     }
 
+    /// An engine for an agent: no account, no stored password and no setting of the person's, but,
+    /// unlike a demonstration, the same computer id each time, kept in `dir`.
+    pub fn confined(dir: &Path, library: &Path) -> Result<Engine, String> {
+        let device = Settings::load(dir).device;
+        let settings = Settings { device, library: Some(library.to_owned()), ..Settings::default() };
+        settings.save(dir)?;
+        Ok(Self::with(dir, settings, false))
+    }
+
     fn with(dir: &Path, settings: Settings, use_secrets: bool) -> Engine {
         let (tx, rx) = channel();
         let player = Player::new();

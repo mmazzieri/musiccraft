@@ -9,6 +9,9 @@
     clippy::unreachable
 )]
 
+mod confine;
+mod mcp;
+
 use musiccraft_engine::settings::data_dir;
 use musiccraft_engine::{Command, Engine, NowStatus};
 use musiccraft_library::Item;
@@ -32,6 +35,9 @@ Commands
   run JSON                 any command of the engine, for example
                            {\"cmd\":\"playlist_new\",\"name\":\"Mix\"}
   demo FOLDER              write a demonstration library
+  mcp --automation-read-root DIR --automation-write-root DIR
+                           serve the library to an agent (MCP on standard input and output);
+                           needs --library, inside a write folder
 
 Without --library, the library chosen in the window is used.";
 
@@ -73,6 +79,12 @@ fn run() -> Result<Value, String> {
         "demo" => {
             let dir = PathBuf::from(rest.first().ok_or("demo needs a folder")?);
             musiccraft_engine::demo::write_library(&dir)?;
+            return Ok(Value::Null);
+        }
+        "mcp" => {
+            let library = library.ok_or("mcp needs --library")?;
+            let dir = data_dir().ok_or("there is no data folder on this system")?.join("mcp");
+            mcp::serve(mcp::open(&library, &dir, confine::roots(&rest)?)?).map_err(|e| e.to_string())?;
             return Ok(Value::Null);
         }
         _ => {}
