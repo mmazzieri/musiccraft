@@ -1729,7 +1729,10 @@ impl Engine {
                     return;
                 }
                 let playable = file.file_name().and_then(|n| n.to_str()).is_some_and(musiccraft_library::is_audio);
-                let placed = if playable {
+                // Looked at again, since it was found some time ago.
+                let placed = if !exported::is_local_file(file) {
+                    Err("the file is not on this computer".to_owned())
+                } else if playable {
                     musiccraft_library::import::place(&music, file)
                 } else {
                     Err("this kind of file cannot be played".to_owned())
