@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MusicCraft</string>
+    <string name="welcome">Choose your MusicCraft folder: the one with Music and Library inside, that your computers share. On a phone it can be in a sync app that offers its folders to other apps, or on the phone itself.</string>
+    <string name="choose_folder">Choose the folder</string>
+    <string name="change_folder">Change folder</string>
+    <string name="reload">Read again</string>
+    <string name="albums">Albums</string>
+    <string name="songs">Songs</string>
+    <string name="playlists">Playlists</string>
+    <string name="search">Search</string>
+    <string name="back">Back</string>
+    <string name="play">Play</string>
+    <string name="pause">Pause</string>
+    <string name="next">Next</string>
+    <string name="previous">Previous</string>
+    <string name="love">Love</string>
+    <string name="loved">Loved</string>
+    <string name="not_here">Not on this phone</string>
+    <string name="smart">Smart playlist</string>
+    <string name="rating">Rating</string>
+    <string name="stars">%1$d stars</string>
+    <string name="no_rating">No rating</string>
+    <string name="close">Close</string>
+    <string name="reading">Reading the library…</string>
+    <string name="empty">No songs yet. Add music on a computer, or put files in the Music folder.</string>
+    <string name="unknown_artist">Unknown artist</string>
+    <string name="unknown_album">Unknown album</string>
+    <string name="unreadable">Some files could not be read: %1$s</string>
+</resources>

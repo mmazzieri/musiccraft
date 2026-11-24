@@ -10,6 +10,9 @@ third-party art. Outputs, committed:
   assets/app-icon/musiccraft-1024.png     source of the macOS .icns
   assets/app-icon/musiccraft.ico          Windows (16-256)
   assets/app-icon/window-64.rgba          raw RGBA for the window icon (include_bytes!)
+  mobile/android/app/src/main/res/mipmap-*/ic_launcher.png   Android launcher
+  mobile/ios/MusicCraft/Assets.xcassets/AppIcon.appiconset/icon-1024.png   iOS (square, opaque:
+                                          the system rounds the corners)
 
 Run from the repository root: python3 tools/icons.py
 """
@@ -55,6 +58,30 @@ def draw(size_px: int, margin: float = 0.0) -> Image.Image:
     return img.resize((size_px, size_px), Image.LANCZOS)
 
 
+def square(size_px: int) -> Image.Image:
+    """The icon without its rounded corners or transparency, for systems that cut their own."""
+    img = Image.new("RGB", (S, S))
+    for y in range(S):
+        t = y / (S - 1)
+        ImageDraw.Draw(img).line([(0, y), (S, y)], fill=tuple(int(a + (b - a) * t) for a, b in zip(TOP, BOTTOM)))
+    big = img.resize((S * 2, S * 2))
+    d = ImageDraw.Draw(big)
+    for x, h, c in BARS:
+        d.rounded_rectangle([(x - HALF) * 2, (512 - h) * 2, (x + HALF) * 2, (512 + h) * 2], radius=HALF * 2, fill=c)
+    return big.resize((size_px, size_px), Image.LANCZOS)
+
+
+def mobile() -> None:
+    res = ROOT / "mobile" / "android" / "app" / "src" / "main" / "res"
+    for name, n in (("mdpi", 48), ("hdpi", 72), ("xhdpi", 96), ("xxhdpi", 144), ("xxxhdpi", 192)):
+        d = res / f"mipmap-{name}"
+        d.mkdir(parents=True, exist_ok=True)
+        draw(n, margin=0.04).save(d / "ic_launcher.png")
+    ios = ROOT / "mobile" / "ios" / "MusicCraft" / "Assets.xcassets" / "AppIcon.appiconset"
+    ios.mkdir(parents=True, exist_ok=True)
+    square(1024).save(ios / "icon-1024.png")
+
+
 def svg() -> str:
     rgb = lambda c: "#%02X%02X%02X" % c
     bars = "\n".join(
@@ -80,6 +107,7 @@ def main() -> None:
     draw(1024, margin=0.09).save(OUT / "musiccraft-1024.png")
     draw(256).save(OUT / "musiccraft.ico", sizes=[(n, n) for n in (16, 20, 24, 32, 40, 48, 64, 128, 256)])
     (OUT / "window-64.rgba").write_bytes(draw(64).tobytes())
+    mobile()
 
 
 if __name__ == "__main__":
