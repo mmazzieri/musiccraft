@@ -1,0 +1,21 @@
+[package]
+name = "musiccraft-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "MusicCraft without a window"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "musiccraft-cli"
+path = "src/main.rs"
+
+[dependencies]
+musiccraft-engine.workspace = true
+musiccraft-library.workspace = true
+serde_json.workspace = true

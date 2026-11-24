@@ -1,0 +1,281 @@
+(left as it is)	(lasciato com'è)
+1. At developer.spotify.com create an app of your own (it is free).	1. Su developer.spotify.com crea una tua app (è gratuito).
+2. As its redirect address enter	2. Come indirizzo di reindirizzamento inserisci
+3. Paste its Client ID here and sign in.	3. Incolla qui il suo Client ID e accedi.
+A music library and player for your files, servers, radio and subscriptions.	Libreria e lettore musicale per i tuoi file, server, radio e abbonamenti.
+About MusicCraft	Informazioni su MusicCraft
+Account	Account
+Accounts	Account
+Add	Aggiungi
+Add Files to Library…	Aggiungi file alla libreria…
+Add Folder to Library…	Aggiungi cartella alla libreria…
+Add a Music Server	Aggiungi un server musicale
+Add a Rule	Aggiungi una regola
+Add a Server…	Aggiungi un server…
+Add a Station	Aggiungi una stazione
+Add a Station by Address…	Aggiungi una stazione per indirizzo…
+Add to Playlist	Aggiungi a playlist
+Add to Queue	Aggiungi alla coda
+Added	Aggiunto
+Added, days ago	Aggiunto, giorni fa
+Adding files: {} of {}	Aggiunta dei file: {} di {}
+Address	Indirizzo
+Address of the stream or of its playlist	Indirizzo del flusso o della sua playlist
+Album	Album
+Album artist	Artista dell'album
+Albums	Album
+All artists	Tutti gli artisti
+All genres	Tutti i generi
+An independent community app. Not affiliated with ArtCraft, Apple or Spotify.	App indipendente della comunità. Non affiliata ad ArtCraft, Apple o Spotify.
+Appearance	Aspetto
+Apple Music, TIDAL, Amazon Music and YouTube Music are not supported: MusicCraft uses only official interfaces that are open to independent desktop programs.	Apple Music, TIDAL, Amazon Music e YouTube Music non sono supportati: MusicCraft usa solo interfacce ufficiali aperte ai programmi desktop indipendenti.
+Artist	Artista
+Artists	Artisti
+Asking the service…	Richiesta al servizio…
+At most (0: no limit)	Al massimo (0: nessun limite)
+Back	Indietro
+Bring Back Removed Songs	Ripristina i brani rimossi
+By Artist	Per artista
+Cancel	Annulla
+Change Repeat	Cambia ripetizione
+Change…	Cambia…
+Choose Another Folder…	Scegli un'altra cartella…
+Choose Library Folder…	Scegli la cartella della libreria…
+Clear	Svuota
+Client ID	Client ID
+Close	Chiudi
+Close the queue	Chiudi la coda
+Column Browser in Songs	Browser a colonne in Brani
+Compact Player	Lettore compatto
+Composer	Compositore
+Computers that share it: {}	Computer che la condividono: {}
+Controls	Controlli
+Create	Crea
+Dark	Scuro
+Delete	Elimina
+Delete “{}”?	Eliminare «{}»?
+Delete…	Elimina…
+Demonstration library	Libreria dimostrativa
+Disc number	Numero del disco
+Dismiss	Chiudi il messaggio
+Drop music files here, or add them.	Trascina qui i file musicali, oppure aggiungili.
+Earlier	Prima
+Edit	Modifica
+Edit Rules	Modifica le regole
+Edit Rules…	Modifica le regole…
+Exit	Esci
+Experimental, and needs Premium. MusicCraft shows your library and tells a Spotify player what to play: the Spotify app on any device, or Spotify Soloist on this computer.	Sperimentale, e richiede Premium. MusicCraft mostra la tua libreria e dice a un lettore Spotify che cosa riprodurre: l'app Spotify su qualsiasi dispositivo, oppure Spotify Soloist su questo computer.
+Export…	Esporta…
+File	File
+Find	Trova
+Find Stations	Trova stazioni
+Find stations in the directory and keep the ones you like.	Trova le stazioni nell'elenco e conserva quelle che preferisci.
+From Radio Browser, a community directory. Type above and press Enter. Double-click plays.	Da Radio Browser, un elenco della comunità. Scrivi in alto e premi Invio. Il doppio clic riproduce.
+Full window	Finestra completa
+Genre	Genere
+Genres	Generi
+Help	Aiuto
+Import Playlist…	Importa playlist…
+Keep in My Stations	Conserva nelle mie stazioni
+Language	Lingua
+Last played	Ultimo ascolto
+Later	Dopo
+Library	Libreria
+Library folder	Cartella della libreria
+Light	Chiaro
+Live radio	Radio in diretta
+Loading…	Caricamento…
+Look Again	Cerca di nuovo
+Look for New Files	Cerca nuovi file
+Looking at the music folder: {} files, {} read	Lettura della cartella della musica: {} file, {} letti
+Louder	Alza il volume
+Love	Mi piace
+Love (1 or 0)	Mi piace (1 o 0)
+Loved Songs	Brani che mi piacciono
+Minutes	Minuti
+Most Played	Più ascoltati
+Move Down	Sposta giù
+Move Up	Sposta su
+Music	Musica
+MusicCraft on the Web	MusicCraft sul web
+My Stations	Le mie stazioni
+Name	Nome
+Name to show	Nome da mostrare
+Navidrome, Gonic, Airsonic and others that speak the Subsonic API.	Navidrome, Gonic, Airsonic e altri che usano l'API Subsonic.
+New Playlist	Nuova playlist
+New Playlist…	Nuova playlist…
+New Smart Playlist	Nuova playlist intelligente
+New Smart Playlist…	Nuova playlist intelligente…
+Newest	Più recenti
+Next	Successivo
+No playlists yet	Ancora nessuna playlist
+No rating	Nessun voto
+No song matches the rules.	Nessun brano corrisponde alle regole.
+Nothing found	Nessun risultato
+Nothing is waiting. Right-click a song to add it.	Nessun brano in attesa. Fai clic destro su un brano per aggiungerlo.
+Open	Apri
+Open the Page	Apri la pagina
+Other services	Altri servizi
+Password	Password
+Passwords and tokens stay in this computer's credential store, never in the shared library folder.	Password e token restano nell'archivio credenziali di questo computer, mai nella cartella condivisa della libreria.
+Pause	Pausa
+Paused	In pausa
+Personal music servers	Server musicali personali
+Play	Riproduci
+Play All	Riproduci tutto
+Play Next	Riproduci dopo questo
+Play Shuffled	Riproduci in ordine casuale
+Play now	Riproduci ora
+Play on	Riproduci su
+Play queue	Coda di riproduzione
+Play {}	Riproduci {}
+Played, days ago	Ascoltato, giorni fa
+Playing: {}, {}	In riproduzione: {}, {}
+Playlist	Playlist
+Playlists	Playlist
+Plays	Ascolti
+Position in the song	Posizione nel brano
+Previous	Precedente
+Put it in OneDrive, Google Drive or another synced folder to share it between your computers.	Mettila in OneDrive, Google Drive o in un'altra cartella sincronizzata per condividerla tra i tuoi computer.
+Quieter	Abbassa il volume
+Radio	Radio
+Random	A caso
+Rating	Voto
+Reading the music folder…	Lettura della cartella della musica…
+Recently Added	Aggiunti di recente
+Recently Played	Ascoltati di recente
+Refresh Services	Aggiorna i servizi
+Remove	Rimuovi
+Remove from Library…	Rimuovi dalla libreria…
+Remove from Playlist	Rimuovi dalla playlist
+Remove love	Togli «Mi piace»
+Remove {}	Rimuovi {}
+Remove {} song from the library?	Rimuovere {} brano dalla libreria?
+Remove {} songs from the library?	Rimuovere {} brani dalla libreria?
+Rename	Rinomina
+Rename Playlist	Rinomina la playlist
+Rename…	Rinomina…
+Repeat: all	Ripeti: tutto
+Repeat: off	Ripeti: no
+Repeat: one song	Ripeti: un brano
+Results for “{}”	Risultati per «{}»
+Right-click songs and choose Add to Playlist.	Fai clic destro sui brani e scegli Aggiungi a playlist.
+Save	Salva
+Saved Songs	Brani salvati
+Search stations	Cerca stazioni
+Search the library	Cerca nella libreria
+Search this service	Cerca in questo servizio
+Services	Servizi
+Set Up Spotify Soloist…	Configura Spotify Soloist…
+Settings	Impostazioni
+Settings…	Impostazioni…
+Show in Folder	Mostra nella cartella
+Shuffle	Ordine casuale
+Shuffle All	Tutto in ordine casuale
+Sign In…	Accedi…
+Sign Out	Esci dall'account
+Sign in to Spotify first, under Streaming.	Prima accedi a Spotify, nella scheda Streaming.
+Signed in	Accesso effettuato
+Signed in as {}	Accesso effettuato come {}
+Signed in to Spotify.	Accesso a Spotify effettuato.
+Smart Lists	Liste intelligenti
+Some files could not be added: {}	Alcuni file non sono stati aggiunti: {}
+Something else is playing on the Spotify device.	Sul dispositivo Spotify è in riproduzione altro.
+Song Information	Informazioni sul brano
+Song Information…	Informazioni sul brano…
+Songs	Brani
+Songs added / already there: {}	Brani aggiunti / già presenti: {}
+Songs left out because they play from a service: {}	Brani esclusi perché provengono da un servizio: {}
+Songs of the playlist not in the library: {}	Brani della playlist non presenti in libreria: {}
+Songs that match	Brani che soddisfano
+Sound from this computer without the Spotify app:	Audio da questo computer senza l'app Spotify:
+Spotify Soloist runs as “{}”.	Spotify Soloist è attivo come «{}».
+Spotify's own player without a window. Download it from Spotify and create your own key there; MusicCraft starts it and stops it.	Il lettore senza finestra di Spotify. Scaricalo da Spotify e crea lì la tua chiave; MusicCraft lo avvia e lo ferma.
+Spotify: {}	Spotify: {}
+Start	Avvia
+Stop	Ferma
+Streaming	Streaming
+Streaming Accounts	Account di streaming
+System	Sistema
+The Spotify sign-in did not work: {}	L'accesso a Spotify non è riuscito: {}
+The demonstration library could not be written: {}	La libreria dimostrativa non è stata scritta: {}
+The files stay in the music folder. You can bring the songs back from the Edit menu.	I file restano nella cartella della musica. Puoi ripristinare i brani dal menu Modifica.
+The first time, choose it once among the devices in a Spotify app on the same network.	La prima volta, sceglilo tra i dispositivi in un'app Spotify sulla stessa rete.
+The library could not be opened: {}	La libreria non è stata aperta: {}
+The library could not be saved: {}	La libreria non è stata salvata: {}
+The library is empty	La libreria è vuota
+The music folder could not be read: {}	La cartella della musica non è leggibile: {}
+The one in use	Quello in uso
+The playlist could not be read: {}	La playlist non è leggibile: {}
+The playlist could not be written: {}	La playlist non è stata scritta: {}
+The server could not be added: {}	Il server non è stato aggiunto: {}
+The server was added: {}	Server aggiunto: {}
+The service did not answer as expected.	Il servizio non ha risposto come previsto.
+The settings could not be saved: {}	Le impostazioni non sono state salvate: {}
+The song cannot be played: {}	Il brano non può essere riprodotto: {}
+The songs stay in the library. The playlist goes from every computer that shares it.	I brani restano nella libreria. La playlist sparisce da tutti i computer che la condividono.
+The station cannot be played: {}	La stazione non può essere riprodotta: {}
+The tags are written into the files.	Le informazioni vengono scritte nei file.
+Time	Durata
+Title	Titolo
+To share it, put the folder in OneDrive, Google Drive or a similar service and choose it on each computer. Songs that are only in the cloud are listed, and downloaded when played.	Per condividerla, metti la cartella in OneDrive, Google Drive o un servizio simile e sceglila su ogni computer. I brani che sono solo nel cloud vengono elencati e scaricati quando li riproduci.
+Track number	Numero di traccia
+Try Again	Riprova
+Unknown	Sconosciuto
+Unknown Album	Album sconosciuto
+Unknown Artist	Artista sconosciuto
+Use This Folder	Usa questa cartella
+User	Utente
+Value	Valore
+Version {}	Versione {}
+View	Vista
+Volume	Volume
+Volume {}%	Volume {}%
+Waiting for the sign-in in the browser…	In attesa dell'accesso nel browser…
+Welcome to MusicCraft	Benvenuto in MusicCraft
+Where the program is (empty: on the search path)	Dove si trova il programma (vuoto: nel percorso di ricerca)
+Without https, others on the network can see what you listen to.	Senza https, altri sulla rete possono vedere che cosa ascolti.
+Year	Anno
+Year and numbers take digits only.	Anno e numeri accettano solo cifre.
+Your key (empty: the one kept on this computer)	La tua chiave (vuoto: quella conservata su questo computer)
+Your music and your library stay together in one folder that you choose.	La tua musica e la tua libreria stanno insieme in una cartella che scegli tu.
+all rules	tutte le regole
+any rule	almeno una regola
+contains	contiene
+files are already being added	è già in corso l'aggiunta di file
+greatest first	dal maggiore
+in the cloud, not downloaded yet	nel cloud, non ancora scaricato
+is	è
+is less than	è minore di
+is more than	è maggiore di
+is not	non è
+loved	mi piace
+no library is open	nessuna libreria è aperta
+no music files were found there	lì non ci sono file musicali
+none of its songs are in the library	nessuno dei suoi brani è in libreria
+not signed in	accesso non effettuato
+open Spotify on this or another device first	prima apri Spotify su questo o un altro dispositivo
+playing	in riproduzione
+shared with {} computer	condivisa con {} altro computer
+shared with {} computers	condivisa con altri {} computer
+songs, by	brani, per
+sorted	ordinato
+sorted, last first	ordinato al contrario
+Spotify Soloist needs your own key	Spotify Soloist richiede la tua chiave
+Spotify Soloist was not found there	Spotify Soloist non è stato trovato lì
+the file has not arrived on this computer	il file non è ancora arrivato su questo computer
+the file is not on this computer	il file non è su questo computer
+the sign-in has expired: sign in again	l'accesso è scaduto: accedi di nuovo
+the sign-in was refused	l'accesso è stato rifiutato
+the song is no longer in the library	il brano non è più in libreria
+{}	{}
+{} album	{} album
+{} albums	{} album
+{} days	{} giorni
+{} h {} min	{} h {} min
+{} min	{} min
+{} of {}	{} di {}
+{} song	{} brano
+{} songs	{} brani
+{} star	{} stella
+{} stars	{} stelle

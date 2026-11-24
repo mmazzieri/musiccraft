@@ -1,0 +1,16 @@
+[package]
+name = "musiccraft-player"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Audio playback for MusicCraft: files and network streams"
+
+[lints]
+workspace = true
+
+[dependencies]
+rodio.workspace = true
+ureq.workspace = true

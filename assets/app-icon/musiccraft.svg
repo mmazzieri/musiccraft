@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- MusicCraft icon: reference drawing of tools/icons.py (MIT OR Apache-2.0). -->
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0E8A96"/><stop offset="1" stop-color="#3A328A"/></linearGradient></defs>
+  <rect width="1024" height="1024" rx="226" fill="url(#g)"/>
+  <rect x="186" y="392" width="92" height="240" rx="46" fill="#FFFFFF"/>
+  <rect x="326" y="262" width="92" height="500" rx="46" fill="#FFFFFF"/>
+  <rect x="466" y="182" width="92" height="660" rx="46" fill="#FFD166"/>
+  <rect x="606" y="302" width="92" height="420" rx="46" fill="#FFFFFF"/>
+  <rect x="746" y="382" width="92" height="260" rx="46" fill="#FFFFFF"/>
+</svg>

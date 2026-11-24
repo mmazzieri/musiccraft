@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=MusicCraft
+GenericName=Music player
+GenericName[it]=Lettore musicale
+Comment=Music library and player for your files, servers, radio and subscriptions
+Comment[it]=Libreria e lettore musicale per i tuoi file, server, radio e abbonamenti
+Exec=musiccraft
+TryExec=musiccraft
+Icon=it.mauromazzieri.musiccraft
+Terminal=false
+StartupNotify=true
+StartupWMClass=it.mauromazzieri.musiccraft
+Categories=AudioVideo;Audio;Player;
+Keywords=music;player;library;playlist;radio;musica;

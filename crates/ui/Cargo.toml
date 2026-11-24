@@ -1,0 +1,30 @@
+[package]
+name = "musiccraft-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "The MusicCraft window, in egui"
+
+[lints]
+workspace = true
+
+[dependencies]
+musiccraft-library.workspace = true
+musiccraft-engine.workspace = true
+musiccraft-player.workspace = true
+musiccraft-services.workspace = true
+eframe.workspace = true
+egui.workspace = true
+image.workspace = true
+rfd.workspace = true
+chrono.workspace = true
+sys-locale.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+egui_kittest.workspace = true

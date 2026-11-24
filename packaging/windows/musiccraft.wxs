@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MusicCraft MSI (WiX Toolset v5: the .NET tool "wix", version 5.0.2). Built by
+  package.ps1:
+
+    wix build musiccraft.wxs -arch x64 -d Version=1.2.3 -d BinDir=... -d IconPath=... -o out.msi
+
+  Dual scope: for everyone on the computer (ALLUSERS=1, into Program Files\MusicCraft) or for
+  the current user only (ALLUSERS=2 MSIINSTALLPERUSER=1, into %LOCALAPPDATA%\Programs), which is
+  what the ArtCraft Launcher asks for. INSTALLFOLDER can be given on the command line. Installs a
+  Start menu shortcut. No setup wizard: the package has nothing
+  to choose and no licence to accept (MIT OR Apache-2.0).
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="MusicCraft"
+      Manufacturer="Mauro Mazzieri"
+      Version="$(var.Version)"
+      UpgradeCode="EF116157-FA83-4EF4-8A6F-09EC8CB5C2D2"
+      Scope="perUserOrMachine"
+      Compressed="yes"
+      Language="1033">
+    <SummaryInformation Description="MusicCraft: music library and player" Manufacturer="Mauro Mazzieri" />
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+        DowngradeErrorMessage="A newer version of MusicCraft is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="MusicCraftIcon.exe" SourceFile="$(var.IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="MusicCraftIcon.exe" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/mmazzieri/musiccraft" />
+    <Property Id="ARPURLUPDATEINFO" Value="https://github.com/mmazzieri/musiccraft/releases" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="MusicCraft" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <Feature Id="Main" Title="MusicCraft" Level="1">
+      <ComponentGroupRef Id="MusicCraftFiles" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="MusicCraftFiles">
+      <Component Id="MusicCraftApp" Directory="INSTALLFOLDER" Guid="CA83CDB2-D5DD-4924-82C6-5F0BEFC083C3">
+        <File Id="MusicCraftExe" Source="$(var.BinDir)\musiccraft.exe" KeyPath="yes" />
+        <File Id="MusicCraftNotice" Source="$(var.BinDir)\NOTICE" />
+        <File Id="MusicCraftLicenseMit" Source="$(var.BinDir)\LICENSE-MIT" />
+        <File Id="MusicCraftLicenseApache" Source="$(var.BinDir)\LICENSE-APACHE" />
+        <File Id="MusicCraftAttribution" Source="$(var.BinDir)\ATTRIBUTION.md" />
+        <File Id="MusicCraftThirdParty" Source="$(var.BinDir)\THIRD-PARTY-LICENSES.txt" />
+        <!-- Win+R "musiccraft". -->
+        <RegistryValue Root="HKMU" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\musiccraft.exe" Value="[#MusicCraftExe]" Type="string" />
+      </Component>
+      <Component Id="MusicCraftShortcut" Directory="ProgramMenuFolder" Guid="E6ED3B67-C0BE-4244-BF09-C284D475F316">
+        <Shortcut Id="StartMenuShortcut" Name="MusicCraft" Description="Music library and player"
+            Target="[#MusicCraftExe]" WorkingDirectory="INSTALLFOLDER" Icon="MusicCraftIcon.exe">
+          <ShortcutProperty Key="System.AppUserModel.ID" Value="it.mauromazzieri.musiccraft" />
+        </Shortcut>
+        <RegistryValue Root="HKMU" Key="Software\Mauro Mazzieri\MusicCraft" Name="StartMenuShortcut" Value="1" Type="integer" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

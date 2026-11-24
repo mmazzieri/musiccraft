@@ -1,0 +1,86 @@
+//! The window driven by keyboard through its accessibility tree.
+
+use egui::accesskit::Role;
+use egui_kittest::Harness;
+use egui_kittest::kittest::{NodeT, Queryable};
+use musiccraft_ui::{App, Options};
+use std::sync::{Mutex, MutexGuard, PoisonError};
+
+/// The windows share one demonstration library on disk, so only one is open at a time.
+static ONE: Mutex<()> = Mutex::new(());
+
+fn alone() -> MutexGuard<'static, ()> {
+    ONE.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn window(view: &str) -> Harness<'static, App> {
+    let options = Options {
+        demo: true,
+        // With a picture asked for, the demonstration shows a song without opening a sound device.
+        screenshot: Some(std::env::temp_dir().join("musiccraft-test-never-taken.png")),
+        view: view.to_owned(),
+        language: "en".to_owned(),
+        theme: "light".to_owned(),
+    };
+    let mut h = Harness::builder().with_size([1180.0, 760.0]).build_eframe(move |cc| App::new(&cc.egui_ctx, options));
+    h.run_steps(4);
+    h
+}
+
+fn rows(h: &Harness<'_, App>) -> Vec<(String, bool)> {
+    h.query_all_by_role(Role::Row)
+        .map(|n| {
+            let n = n.accesskit_node();
+            (n.label().unwrap_or_default(), n.is_selected().unwrap_or(false))
+        })
+        .collect()
+}
+
+/// In the song table the arrow keys move both the selection and the real focus, Shift extends,
+/// and each row's name says the song, the artist and the album.
+#[test]
+fn the_song_table_works_by_keyboard() {
+    let _one = alone();
+    let mut h = window("songs");
+    let all = rows(&h);
+    assert!(all.len() > 10, "{all:?}");
+    assert!(all[0].0.matches(", ").count() >= 3, "{:?}", all[0]);
+    h.query_all_by_role(Role::Row).next().unwrap().focus();
+    h.run_steps(2);
+    h.key_press(egui::Key::ArrowDown);
+    h.run_steps(2);
+    assert_eq!(rows(&h).iter().map(|r| r.1).collect::<Vec<_>>()[..3], [false, true, false]);
+    let focused = h.query_all_by_role(Role::Row).position(|n| n.accesskit_node().is_focused());
+    assert_eq!(focused, Some(1));
+    h.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::ArrowDown);
+    h.run_steps(2);
+    assert_eq!(rows(&h).iter().map(|r| r.1).collect::<Vec<_>>()[..4], [false, true, true, false]);
+}
+
+/// The new-playlist dialog opens from the keyboard, takes the focus in its name field, and Esc
+/// closes it without making a playlist.
+#[test]
+fn a_dialog_takes_the_focus_and_closes_with_escape() {
+    let _one = alone();
+    let mut h = window("songs");
+    let before = h.query_all_by_label("New Playlist").count();
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::N);
+    h.run_steps(3);
+    let field = h.get_by_role_and_label(Role::TextInput, "Name");
+    assert!(field.accesskit_node().is_focused());
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    assert_eq!(h.query_all_by_label("New Playlist").count(), before);
+}
+
+/// Every control of the header has its own name, in the person's words.
+#[test]
+fn the_header_is_named() {
+    let _one = alone();
+    let h = window("albums");
+    for name in ["Previous", "Play", "Next", "Shuffle", "Repeat: off", "Play queue"] {
+        assert!(h.query_all_by_role_and_label(Role::Button, name).next().is_some(), "{name}");
+    }
+    assert!(h.query_all_by_role(Role::SearchInput).next().is_some());
+    assert_eq!(h.query_all_by_role(Role::Tab).count(), 3);
+}

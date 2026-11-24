@@ -1,0 +1,4 @@
+#!/bin/sh
+# MusicCraft AppImage entry point: runs the app with the file it was given.
+APPDIR="$(dirname "$(readlink -f "$0")")"
+exec "$APPDIR/usr/bin/musiccraft" "$@"
