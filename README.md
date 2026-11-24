@@ -47,6 +47,9 @@ app, and it is not affiliated with ArtCraft, Apple or Spotify. Other projects us
   sync, no podcasts, no lyrics.
 - It does not read other programs' libraries. Export playlists from them as M3U and add the files.
 - No web build and no MCP server yet; the command line runs every command of the engine.
+- Known problem: the window may rarely stop at start while drawing (seen once in eleven starts on one
+  computer with two graphics cards; egui issues [8450](https://github.com/emilk/egui/issues/8450) and
+  [8265](https://github.com/emilk/egui/issues/8265) describe the same message).
 - Screen readers were not tried. Tests drive the table and the dialogs through the accessibility tree.
 
 ## Install
