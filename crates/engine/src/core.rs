@@ -3,6 +3,7 @@
 
 use crate::art::{Art, From as ArtFrom};
 use crate::command::{Command, TagEdit};
+use crate::exported::{self, Exported};
 use crate::matching::Account;
 use crate::pages::{Page, PageState, Pages, Via};
 use crate::queue::{Queue, Repeat};
@@ -84,6 +85,8 @@ enum Event {
     Resolved(u64, Result<String, String>),
     SignedIn(String, Result<(Arc<Spotify>, String), String>),
     ServerChecked(ServerAccount, String, Result<(), String>),
+    ExportedRead(PathBuf, Result<Exported, String>),
+    Exported(Box<Taken>),
     /// What a song is on a service, or nothing when it is not there.
     Found {
         id: String,
@@ -92,6 +95,27 @@ enum Event {
     },
     /// A search of the whole library ended, with the reason when it stopped early.
     FoundAll(Option<String>),
+}
+
+/// An exported library whose files are in place, waiting to be put in the catalogue.
+struct Taken {
+    exported: Exported,
+    /// Where each song's file is below the music folder, by the song's number.
+    places: HashMap<u64, String>,
+    copied: usize,
+    /// Files that could not be copied, with the reason.
+    failed: Vec<(PathBuf, String)>,
+}
+
+/// What an exported library holds, for the person to see before it is taken in.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Incoming {
+    pub path: PathBuf,
+    pub songs: usize,
+    pub files: usize,
+    pub bytes: u64,
+    pub playlists: usize,
+    pub others: usize,
 }
 
 /// How a library song or a service's song is played now.
@@ -153,6 +177,10 @@ pub struct Engine {
     scan_again: bool,
     import: Option<Arc<Progress>>,
     import_total: usize,
+    reading: bool,
+    /// An exported library that was read, until it is shown.
+    pub incoming: Option<Incoming>,
+    taken: Option<Box<Taken>>,
     checking: usize,
     resolving: u64,
     pub notices: Vec<Notice>,
@@ -219,6 +247,9 @@ impl Engine {
             scan_again: false,
             import: None,
             import_total: 0,
+            reading: false,
+            incoming: None,
+            taken: None,
             checking: 0,
             resolving: 0,
             notices: Vec::new(),
@@ -329,7 +360,10 @@ impl Engine {
 
     /// Files copied, of how many, by the import under way.
     pub fn import_progress(&self) -> Option<(usize, usize)> {
-        self.import.as_ref().map(|p| (p.read.load(Ordering::Relaxed), self.import_total))
+        self.import.as_ref().map(|p| {
+            let total = if self.import_total > 0 { self.import_total } else { p.found.load(Ordering::Relaxed) };
+            (p.read.load(Ordering::Relaxed), total)
+        })
     }
 
     /// Whether something runs in the background.
@@ -337,6 +371,7 @@ impl Engine {
         self.scan.is_some()
             || self.import.is_some()
             || self.checking > 0
+            || self.reading
             || !self.searching.is_empty()
             || self.find.is_some()
             || self.sign_in_page.is_some()
@@ -364,6 +399,8 @@ impl Engine {
                 }
                 if std::mem::take(&mut self.scan_again) {
                     self.start_scan();
+                } else if let Some(t) = self.taken.take() {
+                    self.catalogue(*t);
                 }
             }
             Event::Import(r) => {
@@ -373,6 +410,30 @@ impl Engine {
                 }
                 let detail = format!("{} / {}", r.copied, r.duplicates);
                 self.notice("Songs added / already there: {}", &detail, false);
+                self.start_scan();
+            }
+            Event::ExportedRead(path, result) => {
+                self.reading = false;
+                match result {
+                    Ok(e) => {
+                        let files = e.songs.iter().filter_map(|s| s.file.as_ref());
+                        let bytes = files.filter_map(|f| std::fs::metadata(f).ok()).map(|m| m.len()).sum();
+                        self.incoming = Some(Incoming {
+                            path,
+                            songs: e.songs.len(),
+                            files: e.songs.iter().filter(|s| s.file.is_some()).count(),
+                            bytes,
+                            playlists: e.lists.len(),
+                            others: e.others,
+                        });
+                    }
+                    Err(e) => self.error("The library file could not be read: {}", &e),
+                }
+            }
+            Event::Exported(taken) => {
+                self.import = None;
+                // The files are read first, so that each song finds its own.
+                self.taken = Some(taken);
                 self.start_scan();
             }
             Event::Resolved(token, url) => {
@@ -1332,6 +1393,23 @@ impl Engine {
                 return Ok(json!({ "ids": ids, "added": added }));
             }
             Command::SongsImport { path } => return self.import_list(&path),
+            Command::ExportedRead { path } => {
+                if self.reading {
+                    return Err("a library file is already being read".to_owned());
+                }
+                let tx = self.tx.clone();
+                crate::spawn("exported", move || {
+                    let result = exported::read(&path);
+                    tx.send(Event::ExportedRead(path, result)).ok();
+                })?;
+                self.reading = true;
+            }
+            Command::ExportedImport { path, copy } => return self.import_exported(path, copy),
+            Command::ImportStop => {
+                if let Some(p) = &self.import {
+                    p.stop.store(true, Ordering::Relaxed);
+                }
+            }
             Command::ActiveService { service } => {
                 if !service.is_empty() {
                     let s = Service::from_key(&service).ok_or("there is no such service")?;
@@ -1623,6 +1701,105 @@ impl Engine {
         Ok(json!({ "songs": ids.len(), "added": added, "playlists": n }))
     }
 
+    /// Takes in an exported library: copies the files, then scans them, then adds what is known of
+    /// them. Stopping the copy adds nothing to the catalogue; what was copied is there as files.
+    fn import_exported(&mut self, path: PathBuf, copy: bool) -> Result<Value, String> {
+        if self.import.is_some() || self.taken.is_some() {
+            return Err("files are already being added".to_owned());
+        }
+        let music = self.lib_mut()?.music_dir();
+        let progress = Arc::new(Progress::default());
+        let (tx, p) = (self.tx.clone(), progress.clone());
+        crate::spawn("import", move || {
+            let exported = match exported::read(&path) {
+                Ok(e) => e,
+                Err(e) => {
+                    let failed = vec![(path, e)];
+                    tx.send(Event::Import(Report { failed, ..Report::default() })).ok();
+                    return;
+                }
+            };
+            p.found.store(exported.songs.iter().filter(|s| s.file.is_some()).count(), Ordering::Relaxed);
+            let mut t = Taken { exported, places: HashMap::new(), copied: 0, failed: Vec::new() };
+            for s in t.exported.songs.iter().filter(|_| copy) {
+                let Some(file) = &s.file else { continue };
+                if p.stop.load(Ordering::Relaxed) {
+                    let report = Report { copied: t.copied, ..Report::default() };
+                    tx.send(Event::Import(report)).ok();
+                    return;
+                }
+                let playable = file.file_name().and_then(|n| n.to_str()).is_some_and(musiccraft_library::is_audio);
+                let placed = if playable {
+                    musiccraft_library::import::place(&music, file)
+                } else {
+                    Err("this kind of file cannot be played".to_owned())
+                };
+                match placed {
+                    Ok((to, new)) => {
+                        t.copied += usize::from(new);
+                        if let Some(rel) = musiccraft_library::import::below(&music, &to) {
+                            t.places.insert(s.number, rel);
+                        }
+                    }
+                    Err(e) => t.failed.push((file.clone(), e)),
+                }
+                p.read.fetch_add(1, Ordering::Relaxed);
+            }
+            tx.send(Event::Exported(Box::new(t))).ok();
+        })?;
+        self.import = Some(progress);
+        self.import_total = 0;
+        Ok(json!({ "started": true }))
+    }
+
+    /// Puts an exported library in the catalogue, once its files were scanned.
+    fn catalogue(&mut self, t: Taken) {
+        let Some(lib) = &mut self.lib else { return };
+        let by_path = lib.paths();
+        let mut ids: HashMap<u64, String> = HashMap::new();
+        let mut rest = Vec::new();
+        for s in &t.exported.songs {
+            match t.places.get(&s.number).and_then(|p| by_path.get(p)) {
+                Some(id) => {
+                    ids.insert(s.number, id.clone());
+                }
+                None => rest.push(s),
+            }
+        }
+        let (added, _) = lib.add_songs(rest.iter().map(|s| (s.info.clone(), None)).collect());
+        ids.extend(rest.iter().zip(added).map(|(s, id)| (s.number, id)));
+        // Two entries of one song: their plays add up.
+        let mut history: HashMap<&String, musiccraft_library::History> = HashMap::new();
+        for s in &t.exported.songs {
+            let Some(id) = ids.get(&s.number) else { continue };
+            let h = &s.history;
+            let all = history.entry(id).or_default();
+            all.added = match (all.added, h.added) {
+                (0, d) | (d, 0) => d,
+                (a, b) => a.min(b),
+            };
+            all.rating = all.rating.max(h.rating);
+            all.loved |= h.loved;
+            all.plays = all.plays.saturating_add(h.plays);
+            all.skips = all.skips.saturating_add(h.skips);
+            all.last_played = all.last_played.max(h.last_played);
+        }
+        let history: Vec<_> = history.into_iter().map(|(id, h)| (id.clone(), h)).collect();
+        lib.add_history(&history);
+        let lists = t.exported.lists.iter().map(|l| {
+            let items = l.songs.iter().filter_map(|n| ids.get(n)).map(|id| Item::local(id)).collect();
+            (l.origin.clone(), l.name.clone(), items)
+        });
+        let made = lib.add_playlists(lists.collect());
+        let songs = history.len();
+        if let Some((path, why)) = t.failed.first() {
+            let detail = format!("{} - {} ({why})", t.failed.len(), path.display());
+            self.error("Files not copied, whose songs were added without them: {}", &detail);
+        }
+        let detail = format!("{songs} / {} / {made}", t.copied);
+        self.notice("Library imported. Songs / files copied / playlists: {}", &detail, false);
+    }
+
     fn export_playlist(&mut self, id: &str, path: &Path) -> Result<Value, String> {
         let items = self.playlist_items(id).ok_or("there is no such playlist in the library")?;
         let lib = self.lib.as_ref().ok_or("no library is open")?;
@@ -1864,6 +2041,56 @@ mod tests {
         e.run(Command::Next).unwrap();
         assert_eq!(e.to_open[0], "https://tidal.com/track/1");
         assert!(e.to_open[1].contains("search") && e.to_open[1].contains("Ada%20Verdi"));
+    }
+
+    /// A library exported by another program becomes songs with their files, history and playlists;
+    /// importing it again changes nothing, and what the person did since is kept.
+    #[test]
+    fn an_exported_library_is_taken_in_once() {
+        let (outside, root, dir) =
+            (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        crate::demo::write_album(&outside.path().join("Media"), 0, 2, 1).unwrap();
+        let mut files: Vec<_> =
+            std::fs::read_dir(outside.path().join("Media")).unwrap().map(|f| f.unwrap().path()).collect();
+        files.sort();
+        let song = |n: usize, name: &str, location: &str| {
+            format!(
+                "<key>{n}</key><dict><key>Track ID</key><integer>{n}</integer><key>Name</key><string>{name}</string>\
+                 <key>Artist</key><string>Ada</string><key>Play Count</key><integer>7</integer>\
+                 <key>Rating</key><integer>60</integer><key>Location</key><string>{location}</string></dict>"
+            )
+        };
+        let name = |i: usize| files[i].file_name().unwrap().to_str().unwrap().replace(' ', "%20");
+        let xml = format!(
+            "<plist><dict><key>Music Folder</key><string>file://localhost/Q:/Media/</string><key>Tracks</key><dict>{}{}{}</dict>\
+             <key>Playlists</key><array><dict><key>Name</key><string>Mia</string><key>Playlist Persistent ID</key>\
+             <string>P</string><key>Playlist Items</key><array><dict><key>Track ID</key><integer>3</integer></dict>\
+             <dict><key>Track ID</key><integer>1</integer></dict></array></dict></array></dict></plist>",
+            song(1, "Uno", &format!("file://localhost/Q:/Media/{}", name(0))),
+            song(2, "Due", &format!("file://localhost/Q:/Media/{}", name(1))),
+            song(3, "Solo in streaming", "file://localhost/Q:/Media/manca.mp3"),
+        );
+        let path = outside.path().join("Library.xml");
+        std::fs::write(&path, xml).unwrap();
+        let mut e = Engine::isolated(dir.path(), Some(root.path().to_owned()));
+        e.settle(Duration::from_secs(30));
+        e.run(Command::ExportedRead { path: path.clone() }).unwrap();
+        e.settle(Duration::from_secs(30));
+        let seen = e.incoming.take().unwrap();
+        assert_eq!((seen.songs, seen.files, seen.playlists), (3, 2, 1));
+        for round in 0..2 {
+            e.run(Command::ExportedImport { path: path.clone(), copy: true }).unwrap();
+            e.settle(Duration::from_secs(30));
+            let lib = e.library().unwrap();
+            assert_eq!((lib.len(), lib.playlists().len()), (3, 1), "{:?}", e.notices);
+            assert!(lib.tracks().all(|t| t.plays == 7));
+            let first = lib.playlists()[0].items[1].id.clone();
+            assert_eq!(lib.track(&first).unwrap().rating, if round == 0 { 3 } else { 5 });
+            assert!(lib.file(&first).unwrap().starts_with(root.path()));
+            assert!(lib.file(&lib.playlists()[0].items[0].id).is_none());
+            e.run(Command::Rate { ids: vec![first], stars: 5 }).unwrap();
+        }
+        assert!(files.iter().all(|f| f.exists()), "the original files stay");
     }
 
     /// Commands survive the trip through JSON that the command line takes them on.

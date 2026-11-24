@@ -33,6 +33,8 @@ app, and it is not affiliated with ArtCraft, Apple or Spotify. Other projects us
   - For **TIDAL, Apple Music, Deezer, YouTube Music, Amazon Music and Spotify** the song opens in the
     service's own app or web player: its page if you gave it, otherwise a search.
   - Add songs from a service, by hand, or from a CSV list with title and artist columns.
+- **Import**: the library iTunes or Apple Music export as XML (*File › Library › Export Library…*), with files,
+  stars, love, play counts, dates and playlists. Importing again adds nothing twice.
 - **Playlists**: ordinary and smart ones (rules with all/any, limit and order), M3U/M3U8 and PLS in, M3U8 out.
 - **Shared folder**: each computer writes only its own catalogue files
   ([format](docs/library-format.md)). Songs that are still only in the cloud are listed without downloading
@@ -57,7 +59,8 @@ app, and it is not affiliated with ArtCraft, Apple or Spotify. Other projects us
   contents of playlists you own or work on.
 - No Opus, WMA, APE or DSD, no HE-AAC at its full bandwidth, no equalizer, no CD ripping or burning, no phone
   sync, no podcasts, no lyrics.
-- It does not read other programs' libraries. Export playlists from them as M3U and add the files.
+- It does not read other programs' databases, only the library they export. Films, podcasts, audiobooks and
+  protected files are left out or added without the file; smart playlists become ordinary ones.
 - No web build and no MCP server yet; the command line runs every command of the engine.
 - Known problem: the window may rarely stop at start while drawing (seen once in some forty starts on one
   computer with two graphics cards; egui issues [8450](https://github.com/emilk/egui/issues/8450) and

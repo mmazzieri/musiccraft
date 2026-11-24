@@ -100,6 +100,17 @@ pub enum Command {
     SongsImport {
         path: PathBuf,
     },
+    /// Reads the library another program exported (XML), to see what is in it.
+    ExportedRead {
+        path: PathBuf,
+    },
+    /// Takes in the library another program exported: songs, history and playlists. Without `copy`
+    /// the songs are added without their files.
+    ExportedImport {
+        path: PathBuf,
+        copy: bool,
+    },
+    ImportStop,
     /// The service that plays songs without a file; empty for none.
     ActiveService {
         service: String,

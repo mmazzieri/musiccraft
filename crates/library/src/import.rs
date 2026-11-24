@@ -41,9 +41,9 @@ pub fn copy_in(music: &Path, files: &[PathBuf], mut progress: impl FnMut(usize))
         if file.starts_with(music) {
             report.duplicates += 1;
         } else {
-            match copy_one(music, file) {
-                Ok(true) => report.copied += 1,
-                Ok(false) => report.duplicates += 1,
+            match place(music, file) {
+                Ok((_, true)) => report.copied += 1,
+                Ok((_, false)) => report.duplicates += 1,
                 Err(e) => report.failed.push((file.clone(), e)),
             }
         }
@@ -52,7 +52,11 @@ pub fn copy_in(music: &Path, files: &[PathBuf], mut progress: impl FnMut(usize))
     report
 }
 
-fn copy_one(music: &Path, file: &Path) -> Result<bool, String> {
+/// Copies one file into the music folder. Gives back where it is there, and whether it is new.
+pub fn place(music: &Path, file: &Path) -> Result<(PathBuf, bool), String> {
+    if file.starts_with(music) {
+        return Ok((file.to_owned(), false));
+    }
     let name = file.file_name().and_then(|n| n.to_str()).ok_or("the file name is not valid text")?;
     let info = crate::tags::read(file, name)?;
     let ext = name.rsplit_once('.').map_or("", |(_, e)| e).to_ascii_lowercase();
@@ -63,7 +67,7 @@ fn copy_one(music: &Path, file: &Path) -> Result<bool, String> {
         let target = dir.join(if n == 1 { format!("{base}.{ext}") } else { format!("{base} ({n}).{ext}") });
         if target.exists() {
             if same_bytes(file, &target).unwrap_or(false) {
-                return Ok(false);
+                return Ok((target, false));
             }
             continue;
         }
@@ -75,9 +79,21 @@ fn copy_one(music: &Path, file: &Path) -> Result<bool, String> {
             std::fs::remove_file(&part).ok();
             return Err(e.to_string());
         }
-        return Ok(true);
+        return Ok((target, true));
     }
     Err("too many files with this name".to_owned())
+}
+
+/// The path below the music folder, as the library writes it.
+pub fn below(music: &Path, file: &Path) -> Option<String> {
+    use unicode_normalization::UnicodeNormalization;
+    let parts: Option<Vec<String>> = file
+        .strip_prefix(music)
+        .ok()?
+        .components()
+        .map(|c| Some(c.as_os_str().to_str()?.nfc().collect::<String>()))
+        .collect();
+    parts.map(|p| p.join("/")).filter(|p| !p.is_empty())
 }
 
 fn same_bytes(a: &Path, b: &Path) -> std::io::Result<bool> {

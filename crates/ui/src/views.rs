@@ -111,6 +111,9 @@ impl App {
                 if ui.button(self.lang.t("Add Folder to Library…")).clicked() {
                     self.act(Action::AddFolder);
                 }
+                if ui.button(self.lang.t("Import a Library…")).clicked() {
+                    self.act(Action::Open(Dialog::ImportLibrary));
+                }
             } else {
                 ui.heading(self.lang.t("Nothing found"));
             }
