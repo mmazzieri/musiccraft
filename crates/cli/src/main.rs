@@ -26,7 +26,7 @@ Commands
   info                     the library: folder, songs, computers, files it could not read
   scan                     look for new files
   songs [WORDS]            songs that match, as JSON
-  albums | playlists | stations
+  albums | playlists | stations | services
   add PATH...              copy files or folders into the library
   play WORDS               play what matches, until it ends
   run JSON                 any command of the engine, for example
@@ -98,6 +98,7 @@ fn run() -> Result<Value, String> {
         "albums" => engine.run(Command::Albums),
         "playlists" => engine.run(Command::Playlists),
         "stations" => engine.run(Command::Stations),
+        "services" => engine.run(Command::Services),
         "add" => engine.run(Command::Import { paths: rest.iter().map(PathBuf::from).collect() }),
         "run" => {
             let json = rest.first().ok_or("run needs a command in JSON")?;
@@ -130,6 +131,12 @@ fn play(engine: &mut Engine) -> Result<Value, String> {
         engine.tick();
         let now = engine.now();
         if now.item.is_none() || now.status == NowStatus::Failed {
+            return Ok(Value::Null);
+        }
+        for page in std::mem::take(&mut engine.to_open) {
+            println!("{page}");
+        }
+        if now.status == NowStatus::Elsewhere {
             return Ok(Value::Null);
         }
         if now.item != last {

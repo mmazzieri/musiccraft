@@ -28,7 +28,6 @@ All artists	Tutti gli artisti
 All genres	Tutti i generi
 An independent community app. Not affiliated with ArtCraft, Apple or Spotify.	App indipendente della comunità. Non affiliata ad ArtCraft, Apple o Spotify.
 Appearance	Aspetto
-Apple Music, TIDAL, Amazon Music and YouTube Music are not supported: MusicCraft uses only official interfaces that are open to independent desktop programs.	Apple Music, TIDAL, Amazon Music e YouTube Music non sono supportati: MusicCraft usa solo interfacce ufficiali aperte ai programmi desktop indipendenti.
 Artist	Artista
 Artists	Artisti
 Asking the service…	Richiesta al servizio…
@@ -115,7 +114,6 @@ Nothing found	Nessun risultato
 Nothing is waiting. Right-click a song to add it.	Nessun brano in attesa. Fai clic destro su un brano per aggiungerlo.
 Open	Apri
 Open the Page	Apri la pagina
-Other services	Altri servizi
 Password	Password
 Passwords and tokens stay in this computer's credential store, never in the shared library folder.	Password e token restano nell'archivio credenziali di questo computer, mai nella cartella condivisa della libreria.
 Pause	Pausa
@@ -279,3 +277,43 @@ the song is no longer in the library	il brano non è più in libreria
 {} songs	{} brani
 {} star	{} stella
 {} stars	{} stelle
+Add All to Library	Aggiungi tutto alla libreria
+Add a Song Without a File	Aggiungi un brano senza file
+Add a Song Without a File…	Aggiungi un brano senza file…
+Add to Library	Aggiungi alla libreria
+Address of the song's page (Share, then Copy Link)	Indirizzo della pagina del brano (Condividi, poi Copia link)
+Choose the right one. It is kept for this service only.	Scegli quello giusto. Vale solo per questo servizio.
+Find All Songs on {}	Trova tutti i brani su {}
+Found there: {}. Not there: {}.	Trovati: {}. Non presenti: {}.
+Import Song List…	Importa elenco di brani…
+It plays from the streaming service in use.	Viene riprodotto dal servizio di streaming in uso.
+Looking for songs on the service: {} of {}	Ricerca dei brani sul servizio: {} di {}
+Next goes on with the queue	Successivo prosegue con la coda
+None	Nessuno
+Open in Spotify	Apri in Spotify
+Opened in {}	Aperto in {}
+Search	Cerca
+Search There	Cerca lì
+Service in Use	Servizio in uso
+Service in use	Servizio in uso
+Song lists	Elenchi di brani
+Songs added to the library: {}	Brani aggiunti alla libreria: {}
+Songs open in {}, in its app or in the browser. MusicCraft cannot follow them there: press Next to go on. Give a song its exact page from its menu; otherwise a search is opened.	I brani si aprono in {}, nella sua app o nel browser. MusicCraft non può seguirli lì: premi Successivo per proseguire. Dal menu di un brano puoi indicarne la pagina esatta; altrimenti si apre una ricerca.
+Spotify's developer rules restrict programs that combine it with other sources. With your own Client ID, whether to use it this way is your decision.	Le regole di Spotify per gli sviluppatori limitano i programmi che lo combinano con altre fonti. Con il tuo Client ID, la scelta di usarlo così è tua.
+The Song on {}	Il brano su {}
+The Song on {}…	Il brano su {}…
+The search of the library is complete.	La ricerca dei brani della libreria è completa.
+The search of the library stopped: {}	La ricerca dei brani della libreria si è fermata: {}
+The song list could not be read: {}	L'elenco di brani non è leggibile: {}
+This is not a page of {}.	Questa non è una pagina di {}.
+Your library stays the same when you change service. Songs without a file here are played from the one chosen now.	La libreria resta la stessa quando cambi servizio. I brani senza file su questo computer vengono riprodotti da quello scelto ora.
+plays from the streaming service in use	riprodotto dal servizio di streaming in uso
+the service in use does not have it	il servizio in uso non ce l'ha
+a song needs a title and an artist	un brano richiede titolo e artista
+there is no account for this service	non c'è un account per questo servizio
+no streaming service is chosen	nessun servizio di streaming è stato scelto
+the first line must name a title and an artist column	la prima riga deve indicare una colonna del titolo e una dell'artista
+the list has no songs	l'elenco non contiene brani
+{} (opens in its own app)	{} (si apre nella sua app)
+{} song has no file here.	{} brano non ha un file su questo computer.
+{} songs have no file here.	{} brani non hanno un file su questo computer.

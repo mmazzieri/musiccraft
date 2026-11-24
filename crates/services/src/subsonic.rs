@@ -159,6 +159,7 @@ fn song(v: &Value) -> Entry {
         art: text(v, "coverArt"),
         year: small(v, "year"),
         track: small(v, "track"),
+        isrc: v.pointer("/isrc/0").and_then(Value::as_str).unwrap_or("").to_owned(),
         count: 0,
     }
 }
@@ -173,6 +174,7 @@ fn album(v: &Value) -> Entry {
         art: text(v, "coverArt"),
         year: small(v, "year"),
         track: 0,
+        isrc: String::new(),
         count: small(v, "songCount"),
     }
 }

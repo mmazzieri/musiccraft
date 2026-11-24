@@ -1,13 +1,15 @@
 //! What the library holds, as the person sees it after the merge.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// What is read from a file's tags and properties. Written as one unit: an edit in MusicCraft
 /// writes the tags and this record together.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Info {
-    /// Path below `Music/`, with `/` between the parts.
+    /// Path below `Music/`, with `/` between the parts. Empty for a song without a file, which
+    /// plays from the streaming service in use.
     pub path: String,
     pub title: String,
     pub artist: String,
@@ -21,6 +23,9 @@ pub struct Info {
     pub duration_ms: u64,
     pub bitrate: u32,
     pub size: u64,
+    /// The recording's international code, when a tag or a service gives it.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub isrc: String,
     /// Guessed from the file's path, because the file is still only in the cloud.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub guessed: bool,
@@ -39,6 +44,9 @@ pub struct Track {
     pub plays: u64,
     pub skips: u64,
     pub last_played: u64,
+    /// What the song is on each service, by [`Source::key`].
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub links: BTreeMap<String, Link>,
     /// Where the file is, seen from this computer.
     #[serde(skip)]
     pub presence: Presence,
@@ -51,8 +59,17 @@ pub enum Presence {
     Here,
     /// Listed by the sync service but not downloaded yet; playing it downloads it.
     Cloud,
+    /// In the library without a file: it plays from the streaming service in use.
+    Stream,
     /// Known from another computer, the file has not arrived (or was deleted).
     Missing,
+}
+
+impl Presence {
+    /// Whether only a streaming service can play the song here.
+    pub fn needs_service(self) -> bool {
+        matches!(self, Presence::Stream | Presence::Missing)
+    }
 }
 
 impl Track {
@@ -72,6 +89,9 @@ impl Track {
             artist: self.info.artist.clone(),
             album: self.info.album.clone(),
             duration_ms: self.info.duration_ms,
+            isrc: self.info.isrc.clone(),
+            year: self.info.year,
+            track: self.info.track,
             art: String::new(),
         }
     }
@@ -112,6 +132,42 @@ pub struct Item {
     pub meta: Option<Meta>,
 }
 
+impl Source {
+    /// The name of a streaming service in the library's links and in the settings; nothing for
+    /// files and radio.
+    pub fn key(&self) -> Option<String> {
+        match self {
+            Source::Server { account } => Some(format!("server:{account}")),
+            Source::Spotify => Some("spotify".to_owned()),
+            Source::Local | Source::Radio => None,
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Source> {
+        match key.strip_prefix("server:") {
+            Some(account) if !account.is_empty() => Some(Source::Server { account: account.to_owned() }),
+            None if key == "spotify" => Some(Source::Spotify),
+            _ => None,
+        }
+    }
+}
+
+/// What a song is on one service.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Link {
+    /// The service's own id; empty when it was looked for and not found.
+    pub id: String,
+    /// The service's artwork id, for personal servers only.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub art: String,
+    /// Chosen by the person, so a search never replaces it.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub chosen: bool,
+    /// When it was found or looked for, in milliseconds since 1970.
+    pub at: u64,
+}
+
 impl Item {
     pub fn local(id: &str) -> Item {
         Item { source: Source::Local, id: id.to_owned(), meta: None }
@@ -125,9 +181,20 @@ pub struct Meta {
     pub artist: String,
     pub album: String,
     pub duration_ms: u64,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub isrc: String,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub year: u32,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub track: u32,
     /// Artwork address or server artwork id.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub art: String,
+}
+
+// serde's skip_serializing_if passes a reference.
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

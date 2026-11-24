@@ -313,8 +313,13 @@ impl Spotify {
 
     /// Songs that match; Spotify gives ten at a time.
     pub fn search(&self, query: &str) -> Result<Vec<Entry>, ServiceError> {
+        self.find(query, 3)
+    }
+
+    /// Songs that match, at most `pages` times ten.
+    pub fn find(&self, query: &str, pages: usize) -> Result<Vec<Entry>, ServiceError> {
         let mut out = Vec::new();
-        for page in 0..3 {
+        for page in 0..pages {
             let mut q = url::form_urlencoded::Serializer::new(String::new());
             q.extend_pairs([("q", query), ("type", "track"), ("limit", "10"), ("offset", &(page * 10).to_string())]);
             let v = self.get(&format!("/search?{}", q.finish()))?;
@@ -419,6 +424,7 @@ fn track(v: &Value) -> Option<Entry> {
         art: image(&album),
         year: text(&album, "release_date").get(..4).and_then(|y| y.parse().ok()).unwrap_or(0),
         track: u32::try_from(number(v, "track_number")).unwrap_or(0),
+        isrc: v.pointer("/external_ids/isrc").and_then(Value::as_str).unwrap_or("").to_owned(),
         count: 0,
     })
 }

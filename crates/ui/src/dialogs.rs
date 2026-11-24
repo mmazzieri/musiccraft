@@ -5,8 +5,10 @@ use crate::i18n::{LANGUAGES, Lang, time};
 use crate::theme::tokens;
 use egui::{Key, Ui};
 use musiccraft_engine::command::TagEdit;
-use musiccraft_engine::{Command, Theme};
+use musiccraft_engine::pages::{Page, PageState};
+use musiccraft_engine::{Command, Service, Theme};
 use musiccraft_library::Item;
+use musiccraft_library::model::Info;
 use musiccraft_library::query::Sort;
 use musiccraft_library::smart::{FIELDS, Field, Op, Rule, Rules};
 
@@ -28,6 +30,8 @@ pub enum Dialog {
     Station { name: String, url: String },
     Server { name: String, url: String, user: String, password: String },
     Soloist { path: String, key: String },
+    Song { title: String, artist: String, album: String },
+    Link { id: String, service: Service, song: Box<Info>, query: String, asked: String, page: String },
     Settings,
     About,
 }
@@ -75,6 +79,10 @@ impl Dialog {
         Dialog::Server { name: String::new(), url: String::new(), user: String::new(), password: String::new() }
     }
 
+    pub fn song() -> Dialog {
+        Dialog::Song { title: String::new(), artist: String::new(), album: String::new() }
+    }
+
     pub fn soloist(path: &str) -> Dialog {
         Dialog::Soloist { path: path.to_owned(), key: String::new() }
     }
@@ -85,6 +93,22 @@ impl Dialog {
 }
 
 impl App {
+    /// Chooses what a song is on the service in use.
+    pub(crate) fn link_dialog(&self, id: &str) -> Option<Dialog> {
+        let service = self.engine.active()?;
+        let t = self.engine.library()?.track(id)?;
+        let query = musiccraft_engine::matching::query(&t.info);
+        let page = t.links.get(&service.key()).map(|l| l.id.clone()).unwrap_or_default();
+        Some(Dialog::Link {
+            id: id.to_owned(),
+            service,
+            song: Box::new(t.info.clone()),
+            asked: query.clone(),
+            query,
+            page,
+        })
+    }
+
     /// The tag editor for these songs. A field with different values starts empty.
     pub(crate) fn info_dialog(&self, ids: &[String]) -> Dialog {
         let Some(lib) = self.engine.library() else { return Dialog::About };
@@ -280,6 +304,22 @@ fn body(app: &mut App, ui: &mut Ui, dialog: &mut Dialog) -> bool {
             }
             !(yes || no)
         }
+        Dialog::Song { title, artist, album } => {
+            ui.heading(app.lang.t("Add a Song Without a File"));
+            ui.label(egui::RichText::new(app.lang.t("It plays from the streaming service in use.")).color(weak));
+            field(ui, app.lang.t("Title"), title, true, false);
+            field(ui, app.lang.t("Artist"), artist, false, false);
+            field(ui, app.lang.t("Album"), album, false, false);
+            let can = !title.trim().is_empty() && !artist.trim().is_empty();
+            let (yes, no) = buttons(app, ui, app.lang.t("Add"), can);
+            if yes {
+                app.cmd(Command::SongAdd { title: title.clone(), artist: artist.clone(), album: album.clone() });
+            }
+            !(yes || no)
+        }
+        Dialog::Link { id, service, song, query, asked, page } => {
+            link(app, ui, (id, service, song), (query, asked), page)
+        }
         Dialog::Settings => settings(app, ui),
         Dialog::About => {
             ui.heading("MusicCraft");
@@ -296,6 +336,85 @@ fn body(app: &mut App, ui: &mut Ui, dialog: &mut Dialog) -> bool {
             !ui.button(app.lang.t("Close")).clicked()
         }
     }
+}
+
+/// Chooses by hand what a song is on a service: from a search, or by its page.
+fn link(
+    app: &mut App,
+    ui: &mut Ui,
+    (id, service, song): (&str, &Service, &Info),
+    (query, asked): (&mut String, &mut String),
+    page: &mut String,
+) -> bool {
+    let weak = tokens(ui).weak;
+    let key = service.key();
+    ui.heading(app.lang.f("The Song on {}", service.name()));
+    ui.label(format!("{} — {}", song.title, song.artist));
+    if let Service::Open(site) = service {
+        field(ui, app.lang.t("Address of the song's page (Share, then Copy Link)"), page, true, false);
+        let ok = site.accepts(page.trim());
+        if !page.trim().is_empty() && !ok {
+            let text = app.lang.f("This is not a page of {}.", site.name());
+            ui.label(egui::RichText::new(text).color(tokens(ui).error));
+        }
+        if ui.button(app.lang.t("Search There")).clicked() {
+            app.act(Action::Browse(site.page(song, None)));
+        }
+        let (yes, no) = buttons(app, ui, app.lang.t("Save"), ok);
+        if yes {
+            app.cmd(Command::LinkSet { id: id.to_owned(), service: key, to: page.clone(), art: String::new() });
+        }
+        return !(yes || no);
+    }
+    let r = field(ui, app.lang.t("Search"), query, true, false);
+    if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+        query.clone_into(asked);
+    }
+    let what = match service {
+        Service::Server(name) => Page::ServerSearch(name.clone(), asked.clone()),
+        _ => Page::SpotifySearch(asked.clone()),
+    };
+    let mut keep = true;
+    match app.engine.page(&what) {
+        PageState::Loading => {
+            ui.spinner();
+        }
+        PageState::Failed(e) => {
+            ui.label(egui::RichText::new(app.lang.t(&e)).color(tokens(ui).error));
+        }
+        PageState::Ready(c) if c.songs.is_empty() => {
+            ui.label(app.lang.t("Nothing found"));
+        }
+        PageState::Ready(c) => {
+            egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                for e in c.songs.iter().take(60) {
+                    let text = format!("{} — {} · {} · {}", e.title, e.artist, e.album, time(e.duration_ms));
+                    let on = *page == e.id;
+                    if ui.push_id(&e.id, |ui| ui.selectable_label(on, text)).inner.clicked() {
+                        app.cmd(Command::LinkSet {
+                            id: id.to_owned(),
+                            service: key.clone(),
+                            to: e.id.clone(),
+                            art: e.art.clone(),
+                        });
+                        keep = false;
+                    }
+                }
+            });
+        }
+    }
+    ui.add_space(8.0);
+    ui.label(egui::RichText::new(app.lang.t("Choose the right one. It is kept for this service only.")).color(weak));
+    ui.horizontal(|ui| {
+        if ui.button(app.lang.t("Look Again")).clicked() {
+            app.cmd(Command::LinkClear { ids: vec![id.to_owned()], service: key.clone() });
+            keep = false;
+        }
+        if ui.button(app.lang.t("Cancel")).clicked() {
+            keep = false;
+        }
+    });
+    keep
 }
 
 fn info(app: &mut App, ui: &mut Ui, ids: &[String], fields: &mut [(Tag, Text)], about: &str) -> bool {
@@ -327,7 +446,10 @@ fn info(app: &mut App, ui: &mut Ui, ids: &[String], fields: &mut [(Tag, Text)], 
             ui.end_row();
         }
     });
-    ui.label(egui::RichText::new(app.lang.t("The tags are written into the files.")).color(weak));
+    let files = app.engine.library().is_some_and(|l| ids.iter().any(|id| l.file(id).is_some()));
+    if files {
+        ui.label(egui::RichText::new(app.lang.t("The tags are written into the files.")).color(weak));
+    }
     let changed = fields.iter().any(|(_, t)| t.first != t.now);
     let numbers_ok = fields
         .iter()

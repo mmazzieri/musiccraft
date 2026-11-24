@@ -8,7 +8,8 @@ documentation: the [Subsonic](https://www.subsonic.org/pages/api.jsp) and
 [OpenSubsonic](https://opensubsonic.netlify.app/) APIs, the
 [Spotify Web API](https://developer.spotify.com/documentation/web-api) and
 [Spotify Soloist](https://developer.spotify.com/documentation/soloist), and
-[Radio Browser](https://www.radio-browser.info).
+[Radio Browser](https://www.radio-browser.info). Services that open in their own app are reached only by
+their public web addresses; no interface of theirs is used.
 
 ## Our own material
 
@@ -35,7 +36,7 @@ documentation: the [Subsonic](https://www.subsonic.org/pages/api.jsp) and
 | Crate | License |
 |---|---|
 | egui, eframe, egui_kittest (tests) | MIT OR Apache-2.0 |
-| craft-atomic (storytold/craft-libs) | MIT OR Apache-2.0 |
+| craft-atomic, craft-csv (storytold/craft-libs) | MIT OR Apache-2.0 |
 | rodio, cpal | MIT OR Apache-2.0; Apache-2.0 |
 | symphonia (through rodio) | MPL-2.0, unmodified |
 | lofty | MIT OR Apache-2.0 |

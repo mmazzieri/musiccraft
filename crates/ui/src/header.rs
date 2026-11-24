@@ -129,11 +129,21 @@ impl App {
             (now.meta.title.clone(), sub.join(" — "))
         };
         centered(ui, line(0.0, 19.0), &title, t.text, 15.0);
-        let sub = if now.status == NowStatus::Loading { self.lang.t("Loading…").to_owned() } else { sub };
+        let sub = match now.status {
+            NowStatus::Loading => self.lang.t("Loading…").to_owned(),
+            NowStatus::Elsewhere => self.lang.f("Opened in {}", &now.via),
+            _ if !now.via.is_empty() => format!("{sub} · {}", now.via),
+            _ => sub,
+        };
         centered(ui, line(18.0, 16.0), &sub, t.weak, 13.0);
         let bottom = line(34.0, 20.0);
         if now.live {
             centered(ui, bottom, &time(now.position_ms), t.weak, 12.0);
+            return;
+        }
+        if now.status == NowStatus::Elsewhere {
+            let text = self.lang.t("Next goes on with the queue");
+            centered(ui, bottom, text, t.weak, 12.0);
             return;
         }
         self.seek_bar(ui, bottom, now.position_ms, now.duration_ms);
@@ -284,6 +294,8 @@ impl App {
                 self.lang.f2("Adding files: {} of {}", done, of)
             } else if let Some((found, read)) = self.engine.scan_progress() {
                 self.lang.f2("Looking at the music folder: {} files, {} read", found, read)
+            } else if let Some((done, of)) = self.engine.find_progress() {
+                self.lang.f2("Looking for songs on the service: {} of {}", done, of)
             } else if self.engine.sign_in_page.is_some() {
                 self.lang.t("Waiting for the sign-in in the browser…").to_owned()
             } else {

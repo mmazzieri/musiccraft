@@ -32,6 +32,7 @@ pub fn read(file: &Path, rel: &str) -> Result<Info, String> {
     set(&mut info.genre, tag.genre().map(|v| v.into_owned()));
     set(&mut info.album_artist, tag.get_string(ItemKey::AlbumArtist).map(str::to_owned));
     set(&mut info.composer, tag.get_string(ItemKey::Composer).map(str::to_owned));
+    set(&mut info.isrc, tag.get_string(ItemKey::Isrc).map(str::to_owned));
     if let Some(n) = tag.track() {
         info.track = n;
     }

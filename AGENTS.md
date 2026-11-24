@@ -76,5 +76,6 @@ MusicCraft is an independent community app that follows the Craft rules. The rep
 - Library format: [docs/library-format.md](docs/library-format.md). Never remove a field of version 1 or change its meaning, and never let a computer write another computer's files.
 - Secrets live only in the credential store (`musiccraft_services::secrets`), never in the shared folder, the settings or a log. Addresses with tokens are never shown in errors.
 - Spotify: Web API and, when the person installed it, Soloist. Never download, bundle or redistribute Soloist; never decode, record or cache Spotify's audio. No unofficial interface of any service.
+- Library songs: an id never changes with the service. Links are per service; only `Service::Open` sites' own pages are opened, checked by `Site::accepts`. A match below the threshold in `matching.rs` is never played. No service is put in use for the person, except their only personal server.
 - Attribution file: `ATTRIBUTION.md`. After a change of dependencies run `python3 tools/licences.py`.
 - Departures from the shared rules: workflows do not call craft-common-actions yet, because they are for repositories of storytold; translations are in the app, because craft-i18n serves the storytold apps.

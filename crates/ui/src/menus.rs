@@ -44,6 +44,8 @@ impl App {
                     ui.separator();
                     self.pick(ui, self.lang.t("Add Files to Library…"), Some((cmd, Key::O)), Action::AddFiles);
                     self.pick(ui, self.lang.t("Add Folder to Library…"), None, Action::AddFolder);
+                    self.pick(ui, self.lang.t("Add a Song Without a File…"), None, Action::Open(Dialog::song()));
+                    self.pick(ui, self.lang.t("Import Song List…"), None, Action::ImportSongs);
                     self.pick(ui, self.lang.t("Import Playlist…"), None, Action::ImportPlaylist);
                     ui.separator();
                 });
@@ -116,6 +118,16 @@ impl App {
             });
             ui.menu_button(self.lang.t("Account"), |ui| {
                 self.pick(ui, self.lang.t("Streaming Accounts"), None, Action::Show(View::Services));
+                let active = self.engine.active();
+                ui.menu_button(self.lang.t("Service in Use"), |ui| {
+                    for s in self.engine.choices() {
+                        let on = active.as_ref() == Some(&s);
+                        if ui.radio(on, s.name()).clicked() {
+                            self.cmd(Command::ActiveService { service: s.key() });
+                            ui.close();
+                        }
+                    }
+                });
                 self.pick(ui, self.lang.t("Refresh Services"), None, Action::Run(Command::Refresh));
             });
             ui.menu_button(self.lang.t("Help"), |ui| {
@@ -155,6 +167,16 @@ impl App {
                 self.pick(ui, &name, None, Action::Run(Command::PlaylistAdd { id, items: items.to_vec() }));
             }
         });
+        if items.iter().any(|i| i.source.key().is_some()) {
+            let add = Command::LibraryAdd { items: items.to_vec() };
+            self.pick(ui, self.lang.t("Add to Library"), None, Action::Run(add));
+        }
+        if let [Item { source: Source::Spotify, id, .. }] = items
+            && let Some(track) = id.strip_prefix("spotify:track:")
+        {
+            let page = format!("https://open.spotify.com/track/{track}");
+            self.pick(ui, self.lang.t("Open in Spotify"), None, Action::Browse(page));
+        }
         if ids.is_empty() {
             return;
         }
@@ -177,7 +199,15 @@ impl App {
         let dialog = self.info_dialog(&ids);
         self.pick(ui, info, None, Action::Open(dialog));
         if let [id] = ids.as_slice() {
-            self.pick(ui, self.lang.t("Show in Folder"), None, Action::Reveal(id.clone()));
+            let has_file = self.engine.library().and_then(|l| l.file(id)).is_some();
+            if has_file {
+                self.pick(ui, self.lang.t("Show in Folder"), None, Action::Reveal(id.clone()));
+            }
+            if let Some(d) = self.link_dialog(id) {
+                let name = self.engine.active().map(|s| s.name()).unwrap_or_default();
+                let text = self.lang.f("The Song on {}…", name);
+                self.pick(ui, &text, None, Action::Open(d));
+            }
         }
         ui.separator();
         self.pick(ui, self.lang.t("Remove from Library…"), None, Action::Open(Dialog::Remove { ids }));

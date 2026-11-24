@@ -2,8 +2,8 @@
 
 # MusicCraft
 
-A music library and player for your files, your music servers, internet radio and your Spotify
-subscription. A native desktop app in Rust, for Windows, macOS and Linux. MIT OR Apache-2.0.
+A music library and player that stays the same while the place your music plays from changes: your
+files, your music servers, internet radio, or the streaming service you use now. A native desktop app in Rust, for Windows, macOS and Linux. MIT OR Apache-2.0.
 
 Music and library live together in **one folder that you choose**, by default `MusicCraft` inside the
 system's music folder. Put it in OneDrive, Google Drive, Dropbox or Syncthing and several computers share
@@ -13,8 +13,10 @@ it: songs, play counts, ratings and playlists are merged, not overwritten.
 
 ![The artists view, dark theme](docs/images/artists.png)
 
-> **Status:** 0.1, early alpha. Spotify is built from its public documentation and tested against a local
-> stand-in, not yet against the live service. The rest of this page says what else is missing.
+![Choosing the service in use](docs/images/services.png)
+
+> **Status:** 1.0, the first release. Spotify is built from its public documentation and tested against a
+> local stand-in, not against the live service. The rest of this page says what else is missing.
 
 MusicCraft is an independent community project in the style of the Craft apps. It is not an official Craft
 app, and it is not affiliated with ArtCraft, Apple or Spotify. Other projects use the same name.
@@ -23,6 +25,14 @@ app, and it is not affiliated with ArtCraft, Apple or Spotify. Other projects us
 
 - **Library**: recently added, artists, albums, songs, genres, search, column browser, love, 0–5 stars, play
   counts, tag editing written into the files.
+- **A stable library**: it also holds songs you have no file of. Those play from the *service in use*, and
+  change nothing but their source when you choose another. A song keeps its love, stars, play count and
+  playlists through that, and takes its file when one arrives.
+  - On a **music server** each song is found by its recording code, or by title, artist, album and length;
+    only a clear match is taken, and you can choose by hand.
+  - For **TIDAL, Apple Music, Deezer, YouTube Music, Amazon Music and Spotify** the song opens in the
+    service's own app or web player: its page if you gave it, otherwise a search.
+  - Add songs from a service, by hand, or from a CSV list with title and artist columns.
 - **Playlists**: ordinary and smart ones (rules with all/any, limit and order), M3U/M3U8 and PLS in, M3U8 out.
 - **Shared folder**: each computer writes only its own catalogue files
   ([format](docs/library-format.md)). Songs that are still only in the cloud are listed without downloading
@@ -38,24 +48,26 @@ app, and it is not affiliated with ArtCraft, Apple or Spotify. Other projects us
 
 ## What it does not do
 
+- **TIDAL, Apple Music, Deezer, YouTube Music and Amazon Music** are not signed in to, searched or played
+  inside MusicCraft. It opens them and cannot see when a song ends: *Next* goes on with the queue. TIDAL, for
+  one, allows playing only in its own player, and forbids combining it with other services.
 - **Spotify** needs Premium and a free Client ID of your own (its Development Mode allows five people per
-  Client ID). MusicCraft does not decode, record or download Spotify's audio. Spotify lists only the
+  Client ID). Its developer policy restricts products that integrate other services' streams, so it is
+  never the service in use unless you choose it. MusicCraft does not decode, record or download Spotify's audio. Spotify lists only the
   contents of playlists you own or work on.
-- **Apple Music, TIDAL, Amazon Music and YouTube Music** are not supported: MusicCraft uses only official
-  interfaces that are open to independent desktop programs.
 - No Opus, WMA, APE or DSD, no HE-AAC at its full bandwidth, no equalizer, no CD ripping or burning, no phone
   sync, no podcasts, no lyrics.
 - It does not read other programs' libraries. Export playlists from them as M3U and add the files.
 - No web build and no MCP server yet; the command line runs every command of the engine.
-- Known problem: the window may rarely stop at start while drawing (seen once in eleven starts on one
+- Known problem: the window may rarely stop at start while drawing (seen once in some forty starts on one
   computer with two graphics cards; egui issues [8450](https://github.com/emilk/egui/issues/8450) and
   [8265](https://github.com/emilk/egui/issues/8265) describe the same message).
 - Screen readers were not tried. Tests drive the table and the dialogs through the accessibility tree.
 
 ## Install
 
-**There is no release yet**: build from source, below. Each [release](https://github.com/mmazzieri/musiccraft/releases)
-will have these files, with their checksums in `SHA256SUMS.txt`:
+Each [release](https://github.com/mmazzieri/musiccraft/releases) has these files, with their checksums in
+`SHA256SUMS.txt`:
 
 | System | File |
 |---|---|
@@ -65,7 +77,7 @@ will have these files, with their checksums in `SHA256SUMS.txt`:
 | Fedora, openSUSE, RHEL | `musiccraft-<version>-linux-<arch>.rpm` |
 | Any Linux with glibc 2.35 or newer | `musiccraft-<version>-linux-<arch>.tar.gz` |
 
-The files will not be signed at first. Windows may ask for a confirmation the first time. On macOS open the app once,
+The files are not signed yet. Windows may ask for a confirmation the first time. On macOS open the app once,
 close the warning, then choose **System Settings › Privacy & Security › Open Anyway**.
 
 ## Build

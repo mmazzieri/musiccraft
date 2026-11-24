@@ -26,13 +26,14 @@ pub mod cloud;
 pub mod import;
 pub mod m3u;
 pub mod model;
+pub mod names;
 pub mod query;
 pub mod scan;
 pub mod smart;
 pub mod store;
 pub mod tags;
 
-pub use model::{Item, Meta, Playlist, Source, Station, Track};
+pub use model::{Item, Link, Meta, Playlist, Source, Station, Track};
 pub use store::{Library, LibraryError};
 
 use std::path::PathBuf;
