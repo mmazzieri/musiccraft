@@ -60,6 +60,9 @@ contents:
   - src: ${STAGE}/usr/bin/musiccraft
     dst: /usr/bin/musiccraft
     file_info: { mode: 0755 }
+  - src: ${STAGE}/usr/bin/musiccraft-cli
+    dst: /usr/bin/musiccraft-cli
+    file_info: { mode: 0755 }
   - src: ${STAGE}/usr/share/
     dst: /usr/share/
     type: tree

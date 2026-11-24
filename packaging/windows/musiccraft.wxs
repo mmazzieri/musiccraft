@@ -52,6 +52,9 @@
         <!-- Win+R "musiccraft". -->
         <RegistryValue Root="HKMU" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\musiccraft.exe" Value="[#MusicCraftExe]" Type="string" />
       </Component>
+      <Component Id="MusicCraftCli" Directory="INSTALLFOLDER" Guid="D60B3343-8159-48F5-9266-5F5D4B04A9CC">
+        <File Id="MusicCraftCliExe" Source="$(var.BinDir)\musiccraft-cli.exe" KeyPath="yes" />
+      </Component>
       <Component Id="MusicCraftShortcut" Directory="ProgramMenuFolder" Guid="E6ED3B67-C0BE-4244-BF09-C284D475F316">
         <Shortcut Id="StartMenuShortcut" Name="MusicCraft" Description="Music library and player"
             Target="[#MusicCraftExe]" WorkingDirectory="INSTALLFOLDER" Icon="MusicCraftIcon.exe">

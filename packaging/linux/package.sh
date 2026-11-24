@@ -42,7 +42,7 @@ has() { case " $FORMATS " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
 echo "==> $APP_NAME $VERSION for Linux $ARCH ($FORMATS)"
 if [[ "$SKIP_BUILD" = 0 ]]; then
-  (cd "$ROOT" && cargo build --release --locked -p "$PKG")
+  (cd "$ROOT" && cargo build --release --locked -p "$PKG" -p "$PKG-cli")
 fi
 BIN="$CARGO_TARGET_DIR/release"
 WORK="$CARGO_TARGET_DIR/linux-package"
@@ -50,8 +50,10 @@ STAGE="$WORK/root"
 rm -rf "$WORK"
 
 # ---- FHS tree shared by every format -------------------------------------------------------
-install -Dm755 "$BIN/$PKG" "$STAGE/usr/bin/$PKG"
-strip "$STAGE/usr/bin/$PKG" 2>/dev/null || true
+for b in "$PKG" "$PKG-cli"; do
+  install -Dm755 "$BIN/$b" "$STAGE/usr/bin/$b"
+  strip "$STAGE/usr/bin/$b" 2>/dev/null || true
+done
 install -Dm644 "$HERE/$APP_ID.desktop" "$STAGE/usr/share/applications/$APP_ID.desktop"
 mkdir -p "$STAGE/usr/share/icons"
 cp -R "$ROOT/assets/app-icon/hicolor" "$STAGE/usr/share/icons/"

@@ -61,11 +61,29 @@ app, and it is not affiliated with ArtCraft, Apple or Spotify. Other projects us
   sync, no podcasts, no lyrics.
 - It does not read other programs' databases, only the library they export. Films, podcasts, audiobooks and
   protected files are left out or added without the file; smart playlists become ordinary ones.
-- No web build and no MCP server yet; the command line runs every command of the engine.
+- No web build. The MCP server covers the library and its playlists: no playing, no services, no radio. The command
+  line runs every command of the engine.
 - Known problem: the window may rarely stop at start while drawing (seen once in some forty starts on one
   computer with two graphics cards; egui issues [8450](https://github.com/emilk/egui/issues/8450) and
   [8265](https://github.com/emilk/egui/issues/8265) describe the same message).
 - Screen readers were not tried. Tests drive the table and the dialogs through the accessibility tree.
+
+## Command line and agents
+
+Every package has `musiccraft-cli` (`musiccraft-cli --help`). `musiccraft-cli mcp` offers the library to an agent
+over the Model Context Protocol, on standard input and output, with no network and no access to your accounts:
+
+```json
+{"mcpServers": {"musiccraft": {"command": "musiccraft-cli", "args": [
+  "--library", "/home/me/Music/MusicCraft", "mcp",
+  "--automation-read-root", "/home/me/Downloads",
+  "--automation-write-root", "/home/me/Music/MusicCraft"]}}}
+```
+
+Both folders are required, and the library must be inside the write folder. Files to add come from these folders,
+and playlists are exported into the write folder. A library that holds symbolic links, or hard links except on
+Windows, where the check is not available, is refused. The folders must not be writable by programs you do not
+trust: a folder swapped during a command is not detected.
 
 ## Install
 

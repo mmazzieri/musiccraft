@@ -38,7 +38,7 @@ their public web addresses; no interface of theirs is used.
 | Crate | License |
 |---|---|
 | egui, eframe, egui_kittest (tests) | MIT OR Apache-2.0 |
-| craft-atomic, craft-csv, craft-docpath, craft-plist (storytold/craft-libs) | MIT OR Apache-2.0 |
+| craft-atomic, craft-csv, craft-docpath, craft-mcp-server, craft-plist (storytold/craft-libs) | MIT OR Apache-2.0 |
 | rodio, cpal | MIT OR Apache-2.0; Apache-2.0 |
 | symphonia (through rodio) | MPL-2.0, unmodified |
 | lofty | MIT OR Apache-2.0 |

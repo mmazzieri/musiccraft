@@ -42,15 +42,17 @@ echo "==> $APP_NAME $VERSION for macOS (universal), identity: $IDENTITY, notariz
 if [[ "$SKIP_BUILD" = 0 ]]; then
   args=()
   for t in "${TARGETS[@]}"; do args+=(--target "$t"); done
-  (cd "$ROOT" && cargo build --release --locked -p "$PKG" "${args[@]}")
+  (cd "$ROOT" && cargo build --release --locked -p "$PKG" -p "$PKG-cli" "${args[@]}")
 fi
 
 rm -rf "$WORK"
 mkdir -p "$WORK/bin" "$APP/Contents/MacOS" "$APP/Contents/Resources"
-inputs=()
-for t in "${TARGETS[@]}"; do inputs+=("$CARGO_TARGET_DIR/$t/release/$PKG"); done
-lipo -create -output "$WORK/bin/$PKG" "${inputs[@]}"
-lipo -info "$WORK/bin/$PKG"
+for b in "$PKG" "$PKG-cli"; do
+  inputs=()
+  for t in "${TARGETS[@]}"; do inputs+=("$CARGO_TARGET_DIR/$t/release/$b"); done
+  lipo -create -output "$WORK/bin/$b" "${inputs[@]}"
+  lipo -info "$WORK/bin/$b"
+done
 
 sign() {
   local ts=(--timestamp) kc=()
@@ -97,11 +99,14 @@ iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/$APP_NAME.icns"
 
 # ---- MusicCraft.app ----------------------------------------------------------------------
 cp "$WORK/bin/$PKG" "$APP/Contents/MacOS/$APP_NAME"
+cp "$WORK/bin/$PKG-cli" "$APP/Contents/MacOS/$PKG-cli"
 for f in LICENSE-MIT LICENSE-APACHE NOTICE ATTRIBUTION.md THIRD-PARTY-LICENSES.txt; do cp "$ROOT/$f" "$APP/Contents/Resources/"; done
 sed -e "s/@VERSION@/$VERSION/g" -e "s/@SHORT_VERSION@/$SHORT_VERSION/g" "$HERE/Info.plist.in" >"$APP/Contents/Info.plist"
 plutil -lint "$APP/Contents/Info.plist"
 printf 'APPL????' >"$APP/Contents/PkgInfo"
 xattr -cr "$APP"
+# The program first: signing the main executable seals the others in the bundle.
+sign --options runtime --entitlements "$HERE/entitlements.plist" "$APP/Contents/MacOS/$PKG-cli"
 sign --options runtime --entitlements "$HERE/entitlements.plist" "$APP/Contents/MacOS/$APP_NAME"
 sign --options runtime --entitlements "$HERE/entitlements.plist" "$APP"
 codesign --verify --strict --deep --verbose=2 "$APP"
