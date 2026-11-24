@@ -16,6 +16,7 @@ musiccraft-library.workspace = true
 musiccraft-player.workspace = true
 musiccraft-services.workspace = true
 craft-atomic.workspace = true
+craft-csv.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true

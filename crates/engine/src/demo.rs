@@ -280,6 +280,15 @@ pub fn dress(engine: &mut crate::Engine, hold: bool) {
         };
         commands.push(Command::SmartNew { name: "Cinque stelle".to_owned(), rules });
     }
+    for (title, artist, album) in [
+        ("Vento di terra", "Lanterna Blu", "Carta nautica"),
+        ("Bussola", "Lanterna Blu", "Carta nautica"),
+        ("Relay", "Kestrel Circuit", "Uplink"),
+    ] {
+        let [title, artist, album] = [title, artist, album].map(str::to_owned);
+        commands.push(Command::SongAdd { title, artist, album });
+    }
+    commands.push(Command::ActiveService { service: "open:tidal".to_owned() });
     let queue = items(pick(13, 1, 20));
     for c in commands {
         // A demonstration without its history is still a demonstration.

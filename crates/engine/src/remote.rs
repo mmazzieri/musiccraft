@@ -30,6 +30,8 @@ pub struct State {
     position_ms: u64,
     at: Instant,
     duration_ms: u64,
+    /// The picture of what plays, as the service gives it now.
+    pub art: String,
     pub error: String,
 }
 
@@ -67,6 +69,7 @@ impl Remote {
             position_ms: 0,
             at: Instant::now(),
             duration_ms: 0,
+            art: String::new(),
             error: String::new(),
         }));
         let shared = state.clone();
@@ -94,6 +97,7 @@ impl Remote {
             uri.clone_into(&mut s.uri);
             s.position_ms = 0;
             s.duration_ms = duration_ms;
+            s.art.clear();
             s.error.clear();
         }
         self.send(Cmd::Play { uri: uri.to_owned(), device: device.to_owned() });
@@ -204,6 +208,7 @@ fn follow(s: &mut State, answer: Option<Playback>) {
             s.position_ms = p.position_ms;
             s.at = Instant::now();
             s.status = if p.playing { Status::Playing } else { Status::Paused };
+            s.art = p.entry.art;
             if p.entry.duration_ms > 0 {
                 s.duration_ms = p.entry.duration_ms;
             }
@@ -232,6 +237,7 @@ mod tests {
             position_ms,
             at: Instant::now(),
             duration_ms: 200_000,
+            art: String::new(),
             error: String::new(),
         }
     }

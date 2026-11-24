@@ -37,13 +37,25 @@ UTF-8 JSON:
 
 | Record | Fields | Section |
 | --- | --- | --- |
-| `track/<id>` | `info` (path, tags, size, duration), `added` | tracks |
+| `track/<id>` | `info` (path, tags, size, duration), `added`, `link:<service>` | tracks |
 | `track/<id>` | `loved`, `rating` (0–5), `removed` | activity |
 | `playlist/<id>` | `name`, `created`, `items` or `smart`, `removed` | playlists |
 | `station/<id>` | `station`, `removed` | playlists |
 
 Fields are never removed or given another meaning within a version. Values a program does not know stay in
 the file of the device that wrote them.
+
+## Songs without a file
+
+A song may have an empty `path`. Its id is made from its title, first artist and album without accents,
+punctuation, guests and remaster notes, so two computers that add it agree. `link:<service>` says what the
+song is on a service: `{ "id": …, "at": …, "chosen": true }`, with an empty `id` when it was looked for and
+not found, and `null` when forgotten. Services are `server:<account name>`, `spotify` and `open:<site>`,
+where the id is a web page of that site; pages of any other host are never opened. Only a personal server's
+artwork id (`art`) is kept with a link. Signing out of Spotify forgets its links.
+
+When a scan finds a file with the same names and a length within five seconds, the song takes it and keeps
+its id. Programs that know only songs with files pass these records over.
 
 ## Songs
 

@@ -85,6 +85,7 @@ pub enum Action {
     AddFolder,
     ChooseLibrary,
     ImportPlaylist,
+    ImportSongs,
     ExportPlaylist(String, String),
     Reveal(String),
     Browse(String),
@@ -363,6 +364,14 @@ impl App {
                         }
                     }
                 }
+                Action::ImportSongs => {
+                    let d = rfd::FileDialog::new().add_filter(self.lang.t("Song lists"), &["csv", "tsv", "txt"]);
+                    if let Some(path) = d.pick_file()
+                        && let Err(e) = self.engine.run(Command::SongsImport { path })
+                    {
+                        self.engine.error("The song list could not be read: {}", &e);
+                    }
+                }
                 Action::ExportPlaylist(id, name) => {
                     let d = rfd::FileDialog::new()
                         .add_filter(self.lang.t("Playlists"), &["m3u8"])
@@ -524,11 +533,15 @@ impl eframe::App for App {
         let spoken = match (now.status, self.engine.notices.last()) {
             (_, Some(n)) => self.lang.f(&n.text, self.lang.t(&n.detail)),
             (NowStatus::Playing, _) => self.lang.f2("Playing: {}, {}", &now.meta.title, &now.meta.artist),
+            (NowStatus::Elsewhere, _) => self.lang.f("Opened in {}", &now.via),
             (NowStatus::Paused, _) => self.lang.t("Paused").to_owned(),
             _ => String::new(),
         };
         self.announce(ui, &spoken);
         self.apply(&ctx);
+        for page in std::mem::take(&mut self.engine.to_open) {
+            ctx.open_url(egui::OpenUrl::new_tab(page));
+        }
         self.screenshot(&ctx);
         let playing = matches!(now.status, NowStatus::Playing | NowStatus::Loading);
         let wait = if playing || self.engine.is_busy() { 200 } else { 1000 };

@@ -8,12 +8,16 @@ use crate::table::{self, Column, Event, Row, Table};
 use crate::theme::{place, tokens};
 use egui::{Align, Layout, Rect, Sense, Ui, UiBuilder, Vec2, vec2};
 use musiccraft_engine::{Command, Engine};
+use musiccraft_library::model::Presence;
 use musiccraft_library::query::{self, Album, Search, Sort, sort_key};
 use musiccraft_library::smart::BuiltIn;
 use musiccraft_library::{Item, Source, Track, default_folder, now_ms};
 use std::path::PathBuf;
 
-pub fn track_row(t: &Track) -> Row {
+/// `service`: the key of the streaming service in use.
+pub fn track_row(t: &Track, service: &str) -> Row {
+    // A song whose file is missing here plays from the service too.
+    let presence = if t.presence.needs_service() && !service.is_empty() { Presence::Stream } else { t.presence };
     Row {
         item: Some(Item::local(&t.id)),
         number: 0,
@@ -27,15 +31,21 @@ pub fn track_row(t: &Track) -> Row {
         rating: t.rating,
         plays: t.plays,
         added: t.added,
-        presence: t.presence,
+        presence,
+        lacking: t.presence.needs_service() && t.links.get(service).is_some_and(|l| l.id.is_empty()),
     }
+}
+
+/// The key of the streaming service in use, or nothing.
+pub fn service_key(engine: &Engine) -> String {
+    engine.active().map(|s| s.key()).unwrap_or_default()
 }
 
 fn item_row(engine: &Engine, item: &Item) -> Row {
     if item.source == Source::Local
         && let Some(t) = engine.library().and_then(|l| l.track(&item.id))
     {
-        return track_row(t);
+        return track_row(t, &service_key(engine));
     }
     let m = engine.meta(item);
     let gone = item.source == Source::Local;
@@ -45,11 +55,7 @@ fn item_row(engine: &Engine, item: &Item) -> Row {
         artist: m.artist,
         album: m.album,
         duration_ms: m.duration_ms,
-        presence: if gone {
-            musiccraft_library::model::Presence::Missing
-        } else {
-            musiccraft_library::model::Presence::Here
-        },
+        presence: if gone { Presence::Missing } else { Presence::Here },
         ..Row::default()
     }
 }
@@ -248,13 +254,15 @@ impl App {
     ) -> std::rc::Rc<Vec<Row>> {
         let state = self.tables.entry(key.to_owned()).or_default();
         let (sort, desc) = *state.sort.get_or_insert(default);
-        let stamp = format!("{}|{}|{sort:?}|{desc}|{extra}", self.revision(), self.search);
+        let service = service_key(&self.engine);
+        let stamp = format!("{}|{}|{sort:?}|{desc}|{extra}|{service}", self.revision(), self.search);
         let search = Search::new(&self.search);
         self.rows(key, stamp, |e| {
             let Some(lib) = e.library() else { return Vec::new() };
             let mut list: Vec<&Track> = lib.tracks().filter(|t| search.matches(t) && keep(t)).collect();
             query::sort(&mut list, sort, desc);
-            list.into_iter().map(track_row).collect()
+            let service = service_key(e);
+            list.into_iter().map(|t| track_row(t, &service)).collect()
         })
     }
 
@@ -435,6 +443,11 @@ impl App {
                         self.cmd(Command::Shuffle { on: true });
                         self.play_rows(rows, 0);
                     }
+                    let of_service = |r: &Row| r.item.as_ref().is_some_and(|i| i.source.key().is_some());
+                    if rows.iter().any(of_service) && ui.button(self.lang.t("Add All to Library")).clicked() {
+                        let items = rows.iter().filter_map(|r| r.item.clone()).collect();
+                        self.cmd(Command::LibraryAdd { items });
+                    }
                 });
             });
         });
@@ -443,11 +456,16 @@ impl App {
     fn built_in(&mut self, ui: &mut Ui, b: BuiltIn) {
         let key = format!("builtin{b:?}");
         // The lists by date change as time passes.
-        let stamp = format!("{}|{}|{}", self.revision(), self.search, now_ms() / 60_000);
+        let service = service_key(&self.engine);
+        let stamp = format!("{}|{}|{}|{service}", self.revision(), self.search, now_ms() / 60_000);
         let search = Search::new(&self.search);
         let rows = self.rows(&key, stamp, |e| {
             let Some(lib) = e.library() else { return Vec::new() };
-            b.rules().select(lib.tracks().filter(|t| search.matches(t)), now_ms()).into_iter().map(track_row).collect()
+            b.rules()
+                .select(lib.tracks().filter(|t| search.matches(t)), now_ms())
+                .into_iter()
+                .map(|t| track_row(t, &service))
+                .collect()
         });
         let name = self.built_in_name(b);
         self.list_header(ui, name, &rows);
@@ -463,7 +481,7 @@ impl App {
             return;
         };
         let key = format!("list{id}");
-        let stamp = format!("{}|{}", self.revision(), self.search);
+        let stamp = format!("{}|{}|{}", self.revision(), self.search, service_key(&self.engine));
         let words = musiccraft_library::model::fold(&self.search);
         let rows = self.rows(&key, stamp, |e| {
             let items = e.playlist_items(id).unwrap_or_default();

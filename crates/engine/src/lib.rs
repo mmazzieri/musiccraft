@@ -16,14 +16,18 @@ pub mod art;
 pub mod command;
 pub mod core;
 pub mod demo;
+pub mod list;
+pub mod matching;
 pub mod pages;
 pub mod queue;
 pub mod remote;
+pub mod service;
 pub mod settings;
 
 pub use command::Command;
 pub use core::{Engine, Now, NowStatus};
 pub use queue::{Queue, Repeat};
+pub use service::{Service, Site};
 pub use settings::{ServerAccount, Settings, Theme};
 
 use std::sync::{Mutex, MutexGuard, PoisonError};

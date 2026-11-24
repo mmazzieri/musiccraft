@@ -85,6 +85,41 @@ pub enum Command {
         paths: Vec<PathBuf>,
     },
     Scan,
+    /// Keeps songs of a service in the library. They stay when the service changes.
+    LibraryAdd {
+        items: Vec<Item>,
+    },
+    /// Puts a song without a file in the library.
+    SongAdd {
+        title: String,
+        artist: String,
+        #[serde(default)]
+        album: String,
+    },
+    /// Puts the songs of a list (CSV) in the library, with its playlists.
+    SongsImport {
+        path: PathBuf,
+    },
+    /// The service that plays songs without a file; empty for none.
+    ActiveService {
+        service: String,
+    },
+    /// Says by hand what a song is on a service: the service's id, or a page of it.
+    LinkSet {
+        id: String,
+        service: String,
+        to: String,
+        #[serde(default)]
+        art: String,
+    },
+    /// Forgets what a song is on a service, to look for it again.
+    LinkClear {
+        ids: Vec<String>,
+        service: String,
+    },
+    /// Looks for every song without a file on the service in use.
+    FindAll,
+    FindStop,
     // Playlists
     PlaylistNew {
         name: String,
@@ -176,6 +211,7 @@ pub enum Command {
         id: String,
     },
     Stations,
+    Services,
     Now,
     Info,
 }

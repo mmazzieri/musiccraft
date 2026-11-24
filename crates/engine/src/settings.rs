@@ -47,6 +47,8 @@ pub struct Settings {
     pub spotify_device: String,
     pub soloist_path: String,
     pub column_browser: bool,
+    /// The key of the streaming service songs without a file play from; empty for none chosen.
+    pub active_service: String,
 }
 
 impl Default for Settings {
@@ -64,6 +66,7 @@ impl Default for Settings {
             spotify_device: String::new(),
             soloist_path: String::new(),
             column_browser: false,
+            active_service: String::new(),
         }
     }
 }

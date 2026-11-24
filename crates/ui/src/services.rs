@@ -7,9 +7,9 @@ use crate::table::{self, Row};
 use crate::theme::{TILE, tokens};
 use crate::views::Kind;
 use egui::{Rect, Ui, vec2};
-use musiccraft_engine::Command;
 use musiccraft_engine::core::{Engine, entry_item};
 use musiccraft_engine::pages::{Content, Page, PageState};
+use musiccraft_engine::{Command, Service};
 use musiccraft_library::{Meta, Source};
 use musiccraft_services::Entry;
 use musiccraft_services::subsonic::AlbumList;
@@ -280,16 +280,11 @@ impl App {
                     .color(t.weak),
                 );
                 ui.add_space(14.0);
+                self.card(ui, |app, ui| app.service_in_use(ui));
+                ui.add_space(12.0);
                 self.card(ui, |app, ui| app.server_accounts(ui));
                 ui.add_space(12.0);
                 self.card(ui, |app, ui| app.spotify_account(ui));
-                ui.add_space(12.0);
-                self.card(ui, |app, ui| {
-                    ui.label(egui::RichText::new(app.lang.t("Other services")).size(18.0));
-                    ui.label(app.lang.t(
-                        "Apple Music, TIDAL, Amazon Music and YouTube Music are not supported: MusicCraft uses only official interfaces that are open to independent desktop programs.",
-                    ));
-                });
             });
         });
     }
@@ -305,6 +300,75 @@ impl App {
                 ui.set_width(ui.available_width());
                 add(self, ui);
             });
+    }
+
+    /// The service that plays songs without a file, and how much of the library it has.
+    fn service_in_use(&mut self, ui: &mut Ui) {
+        let t = tokens(ui);
+        ui.label(egui::RichText::new(self.lang.t("Service in use")).size(18.0));
+        ui.label(
+            egui::RichText::new(self.lang.t(
+                "Your library stays the same when you change service. Songs without a file here are played from the one chosen now.",
+            ))
+            .color(t.weak),
+        );
+        ui.add_space(6.0);
+        let active = self.engine.active();
+        let choices = self.engine.choices();
+        let label = self.lang.t("Service in use");
+        let shown = active.as_ref().map_or(self.lang.t("None").to_owned(), |s| self.service_name(s));
+        ui.horizontal(|ui| {
+            let combo = egui::ComboBox::from_id_salt("in-use").width(330.0).selected_text(shown).show_ui(ui, |ui| {
+                for s in &choices {
+                    let text = self.service_name(s);
+                    if ui.selectable_label(active.as_ref() == Some(s), text).clicked() {
+                        self.cmd(Command::ActiveService { service: s.key() });
+                    }
+                }
+            });
+            combo.response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, true, label));
+        });
+        let (songs, there, not) = self.engine.coverage();
+        if songs > 0 {
+            ui.label(self.lang.n(songs, "{} song has no file here.", "{} songs have no file here."));
+        }
+        match &active {
+            Some(Service::Open(site)) => {
+                ui.label(
+                    egui::RichText::new(self.lang.f(
+                        "Songs open in {}, in its app or in the browser. MusicCraft cannot follow them there: press Next to go on. Give a song its exact page from its menu; otherwise a search is opened.",
+                        site.name(),
+                    ))
+                    .color(t.weak),
+                );
+            }
+            Some(service) if songs > 0 => {
+                ui.label(self.lang.f2("Found there: {}. Not there: {}.", there, not));
+                if self.engine.find_progress().is_some() {
+                    if ui.button(self.lang.t("Stop")).clicked() {
+                        self.cmd(Command::FindStop);
+                    }
+                } else if ui.button(self.lang.f("Find All Songs on {}", service.name())).clicked() {
+                    self.cmd(Command::FindAll);
+                }
+            }
+            _ => {}
+        }
+        if active == Some(Service::Spotify) {
+            ui.label(
+                egui::RichText::new(self.lang.t(
+                    "Spotify's developer rules restrict programs that combine it with other sources. With your own Client ID, whether to use it this way is your decision.",
+                ))
+                .color(t.error),
+            );
+        }
+    }
+
+    fn service_name(&self, s: &Service) -> String {
+        match s {
+            Service::Open(site) => self.lang.f("{} (opens in its own app)", site.name()),
+            other => other.name(),
+        }
     }
 
     fn server_accounts(&mut self, ui: &mut Ui) {

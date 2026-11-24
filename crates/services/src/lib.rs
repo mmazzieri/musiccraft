@@ -55,6 +55,8 @@ pub struct Entry {
     pub art: String,
     pub year: u32,
     pub track: u32,
+    /// The recording's international code, when the service gives it.
+    pub isrc: String,
     /// Number of songs, for albums and playlists.
     pub count: u32,
 }

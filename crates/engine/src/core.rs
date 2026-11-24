@@ -3,12 +3,14 @@
 
 use crate::art::{Art, From as ArtFrom};
 use crate::command::{Command, TagEdit};
+use crate::matching::Account;
 use crate::pages::{Page, PageState, Pages, Via};
 use crate::queue::{Queue, Repeat};
 use crate::remote::{self, Remote};
+use crate::service::{SITES, Service};
 use crate::settings::{ServerAccount, Settings, device_name};
 use musiccraft_library::import::Report;
-use musiccraft_library::model::Presence;
+use musiccraft_library::model::{Info, Link, Presence};
 use musiccraft_library::query::{self, Search};
 use musiccraft_library::scan::{self, Cache, Progress, ScanResult};
 use musiccraft_library::{Item, Library, Meta, Source, Track, m3u, now_ms};
@@ -18,7 +20,7 @@ use musiccraft_services::spotify::{self, Hosts, Spotify};
 use musiccraft_services::subsonic::Server;
 use musiccraft_services::{Entry, radio, secrets};
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -31,6 +33,13 @@ const SCAN_EVERY: Duration = Duration::from_secs(900);
 /// The next song is made ready this long before the current one ends.
 const PRELOAD_MS: u64 = 8_000;
 const SIGN_IN_WAIT: Duration = Duration::from_secs(300);
+/// A song that was not found is looked for again after this long.
+const FORGET_MS: u64 = 30 * 24 * 3600 * 1000;
+/// Between two searches of a long list, so the service is not pressed.
+const SEARCH_PACE: Duration = Duration::from_millis(350);
+/// How many songs in a row are passed over because they cannot be played.
+const MAX_PASSED: usize = 20;
+const MAX_LIST: u64 = 64 * 1024 * 1024;
 const SOLOIST_KEY: &str = "soloist-key";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -40,6 +49,8 @@ pub enum NowStatus {
     Loading,
     Playing,
     Paused,
+    /// Opened in the service's own app, where MusicCraft cannot follow it.
+    Elsewhere,
     Failed,
 }
 
@@ -52,6 +63,8 @@ pub struct Now {
     pub position_ms: u64,
     pub duration_ms: u64,
     pub live: bool,
+    /// The service it plays from, when it is not a file.
+    pub via: String,
     pub stream_title: String,
     pub error: String,
 }
@@ -71,10 +84,33 @@ enum Event {
     Resolved(u64, Result<String, String>),
     SignedIn(String, Result<(Arc<Spotify>, String), String>),
     ServerChecked(ServerAccount, String, Result<(), String>),
+    /// What a song is on a service, or nothing when it is not there.
+    Found {
+        id: String,
+        service: String,
+        result: Result<Option<Entry>, String>,
+    },
+    /// A search of the whole library ended, with the reason when it stopped early.
+    FoundAll(Option<String>),
+}
+
+/// How a library song or a service's song is played now.
+enum Way {
+    /// On this computer, or on a Spotify device.
+    Play(Item),
+    /// The service in use has to be asked first.
+    Search(Service),
+    /// In the service's own app.
+    Open(String, &'static str),
 }
 
 struct Playing {
+    /// What the person chose.
     item: Item,
+    /// What is played for it: the item itself, or the same song on a service.
+    play: Item,
+    /// Opened elsewhere, with the service's name.
+    elsewhere: Option<&'static str>,
     meta: Meta,
     remote: bool,
     /// The player's number for it; 0 before it is known.
@@ -91,7 +127,16 @@ pub struct Engine {
     player: Player,
     pub queue: Queue,
     playing: Option<Playing>,
-    preloaded: Option<(u64, Item)>,
+    /// The player's number, the queue's item and what is played for it.
+    preloaded: Option<(u64, Item, Item)>,
+    /// The song to start when its search ends, and whether the queue came to it by itself.
+    waiting: Option<(String, String, bool)>,
+    searching: HashSet<(String, String)>,
+    find: Option<Arc<Progress>>,
+    find_total: usize,
+    passed: usize,
+    /// Pages to open in the browser or in the service's app.
+    pub to_open: Vec<String>,
     remote: Option<Remote>,
     spotify: Option<Arc<Spotify>>,
     spotify_looked: bool,
@@ -153,6 +198,12 @@ impl Engine {
             player,
             playing: None,
             preloaded: None,
+            waiting: None,
+            searching: HashSet::new(),
+            find: None,
+            find_total: 0,
+            passed: 0,
+            to_open: Vec::new(),
             remote: None,
             spotify: None,
             spotify_looked: false,
@@ -286,6 +337,8 @@ impl Engine {
         self.scan.is_some()
             || self.import.is_some()
             || self.checking > 0
+            || !self.searching.is_empty()
+            || self.find.is_some()
             || self.sign_in_page.is_some()
             || self.resolving > 0
             || self.pages.is_busy()
@@ -356,6 +409,14 @@ impl Engine {
                     Err(e) => self.error("The Spotify sign-in did not work: {}", &e),
                 }
             }
+            Event::Found { id, service, result } => self.found(&id, &service, result),
+            Event::FoundAll(stopped) => {
+                self.find = None;
+                match stopped {
+                    Some(why) => self.error("The search of the library stopped: {}", &why),
+                    None => self.notice("The search of the library is complete.", "", false),
+                }
+            }
             Event::ServerChecked(account, password, result) => {
                 self.checking = self.checking.saturating_sub(1);
                 let kept = result.and_then(|()| secrets::set(&account.secret(), &password).map_err(text));
@@ -416,10 +477,10 @@ impl Engine {
     // ---- services ----
 
     pub fn server(&mut self, name: &str) -> Option<Server> {
-        if !self.use_secrets {
-            return None;
-        }
         if !self.servers.contains_key(name) {
+            if !self.use_secrets {
+                return None;
+            }
             let account = self.settings.servers.iter().find(|s| s.name == name)?.clone();
             let server =
                 secrets::get(&account.secret()).and_then(|p| Server::new(&account.url, &account.user, &p).ok());
@@ -434,6 +495,212 @@ impl Engine {
             self.spotify = Spotify::stored(&self.settings.spotify_client_id).map(Arc::new);
         }
         self.spotify.clone()
+    }
+
+    /// Uses a server without keeping its password; for a script or a test.
+    pub fn use_server(&mut self, name: &str, server: Server) {
+        self.settings.servers.push(ServerAccount {
+            name: name.to_owned(),
+            url: server.url.clone(),
+            user: server.user.clone(),
+        });
+        self.servers.insert(name.to_owned(), Some(server));
+    }
+
+    /// The service songs without a file play from: the one chosen, while its account is there;
+    /// with none chosen, the only personal server. Others are used only when chosen.
+    pub fn active(&self) -> Option<Service> {
+        let known = |name: &str| self.settings.servers.iter().any(|s| s.name == name);
+        match Service::from_key(&self.settings.active_service) {
+            Some(Service::Server(name)) if !known(&name) => {}
+            Some(Service::Spotify) if self.spotify_looked && self.spotify.is_none() => {}
+            Some(s) => return Some(s),
+            None => {}
+        }
+        match self.settings.servers.as_slice() {
+            [only] => Some(Service::Server(only.name.clone())),
+            _ => None,
+        }
+    }
+
+    /// The services that can be chosen.
+    pub fn choices(&mut self) -> Vec<Service> {
+        let mut out: Vec<Service> = self.settings.servers.iter().map(|s| Service::Server(s.name.clone())).collect();
+        if self.spotify().is_some() {
+            out.push(Service::Spotify);
+        }
+        out.extend(SITES.into_iter().map(Service::Open));
+        out
+    }
+
+    /// Songs without a file here, how many of them the service in use has, and how many it was
+    /// asked for in vain.
+    pub fn coverage(&self) -> (usize, usize, usize) {
+        let key = self.active().map(|s| s.key()).unwrap_or_default();
+        let (mut all, mut there, mut not) = (0, 0, 0);
+        for t in self.lib.iter().flat_map(Library::tracks).filter(|t| t.presence.needs_service()) {
+            all += 1;
+            match t.links.get(&key) {
+                Some(l) if l.id.is_empty() => not += 1,
+                Some(_) => there += 1,
+                None => {}
+            }
+        }
+        (all, there, not)
+    }
+
+    fn account(&mut self, service: &Service) -> Option<Account> {
+        match service {
+            Service::Server(name) => self.server(name).map(Account::Server),
+            Service::Spotify => self.spotify().map(Account::Spotify),
+            Service::Open(_) => None,
+        }
+    }
+
+    /// Files searched, of how many, by the search of the library under way.
+    pub fn find_progress(&self) -> Option<(usize, usize)> {
+        self.find.as_ref().map(|p| (p.read.load(Ordering::Relaxed), self.find_total))
+    }
+
+    /// Asks a service for a song in the background.
+    fn search(&mut self, id: &str, service: &Service) {
+        let key = service.key();
+        if self.searching.contains(&(id.to_owned(), key.clone())) {
+            return;
+        }
+        let Some(want) = self.lib.as_ref().and_then(|l| l.track(id)).map(|t| t.info.clone()) else { return };
+        let Some(account) = self.account(service) else {
+            let detail = service.name();
+            self.found(id, &key, Err(format!("{detail}: not signed in")));
+            return;
+        };
+        let (tx, song, service) = (self.tx.clone(), id.to_owned(), key.clone());
+        let started = crate::spawn("find", move || {
+            let result = account.find(&want).map_err(text);
+            tx.send(Event::Found { id: song, service, result }).ok();
+        });
+        match started {
+            Ok(()) => {
+                self.searching.insert((id.to_owned(), key));
+            }
+            Err(e) => self.found(id, &key, Err(e)),
+        }
+    }
+
+    /// Takes in what a service answered, and starts the song if it was waited for.
+    fn found(&mut self, id: &str, service: &str, result: Result<Option<Entry>, String>) {
+        self.searching.remove(&(id.to_owned(), service.to_owned()));
+        let wanted = self.waiting.take_if(|w| w.0 == id && w.1 == service);
+        let failed = match result {
+            Ok(entry) => {
+                let there = entry.is_some();
+                if let Some(lib) = &mut self.lib {
+                    let link = match entry {
+                        Some(e) => link_to(service, &e),
+                        None => Link { at: now_ms(), ..Link::default() },
+                    };
+                    let old = lib.track(id).and_then(|t| t.links.get(service)).cloned();
+                    // A match the person made while the service was asked stays.
+                    if !old.is_some_and(|l| l.chosen) {
+                        // The song may have left the library meanwhile.
+                        lib.set_link(id, service, &link).ok();
+                    }
+                    if let Some(t) = lib.track(id) {
+                        self.art.forget(&format!("album:{}", t.album_key()));
+                        self.art.forget(&format!("track:{id}"));
+                    }
+                }
+                if there { None } else { Some("the service in use does not have it".to_owned()) }
+            }
+            Err(e) => Some(e),
+        };
+        if let Some((_, _, auto)) = wanted {
+            match failed {
+                None => self.begin(auto),
+                Some(why) => self.unplayable(&why, auto),
+            }
+        }
+    }
+
+    fn find_all(&mut self) -> Result<Value, String> {
+        if self.find.is_some() {
+            return Err("the library is already being searched for".to_owned());
+        }
+        let service = self.active().ok_or("no streaming service is chosen")?;
+        let account =
+            self.account(&service).ok_or("this service opens songs in its own app, so there is nothing to look for")?;
+        let key = service.key();
+        let lib = self.lib.as_ref().ok_or("no library is open")?;
+        let songs: Vec<(String, Info)> = lib
+            .tracks()
+            .filter(|t| t.presence.needs_service() && fresh_link(t, &key).is_none())
+            .map(|t| (t.id.clone(), t.info.clone()))
+            .collect();
+        let n = songs.len();
+        if n == 0 {
+            return Ok(json!({ "songs": 0 }));
+        }
+        let progress = Arc::new(Progress::default());
+        let (tx, p) = (self.tx.clone(), progress.clone());
+        crate::spawn("find-all", move || {
+            let mut stopped = None;
+            for (id, want) in songs {
+                if p.stop.load(Ordering::Relaxed) {
+                    break;
+                }
+                match account.find(&want) {
+                    Ok(entry) => {
+                        tx.send(Event::Found { id, service: key.clone(), result: Ok(entry) }).ok();
+                    }
+                    Err(e) => {
+                        stopped = Some(e.to_string());
+                        break;
+                    }
+                }
+                p.read.fetch_add(1, Ordering::Relaxed);
+                std::thread::sleep(SEARCH_PACE);
+            }
+            tx.send(Event::FoundAll(stopped)).ok();
+        })?;
+        self.find = Some(progress);
+        self.find_total = n;
+        Ok(json!({ "songs": n }))
+    }
+
+    /// Puts songs of services in the library. Other items are left as they are. Gives back the
+    /// items, with library songs in place of services' ones, and how many songs are new.
+    fn keep(&mut self, items: Vec<Item>) -> Result<(Vec<Item>, usize), String> {
+        let mut songs = Vec::new();
+        for i in &items {
+            if let (Some(key), Some(m)) = (i.source.key(), &i.meta) {
+                let info = Info {
+                    title: m.title.clone(),
+                    artist: m.artist.clone(),
+                    album: m.album.clone(),
+                    duration_ms: m.duration_ms,
+                    isrc: m.isrc.clone(),
+                    year: m.year,
+                    track: m.track,
+                    ..Info::default()
+                };
+                let e = Entry { id: i.id.clone(), art: m.art.clone(), ..Entry::default() };
+                let link = link_to(&key, &e);
+                songs.push((info, Some((key, link))));
+            }
+        }
+        if songs.is_empty() {
+            return Ok((items, 0));
+        }
+        let (ids, added) = self.lib_mut()?.add_songs(songs);
+        let mut ids = ids.into_iter();
+        let kept = items
+            .into_iter()
+            .map(|i| {
+                let kept = i.source.key().is_some() && i.meta.is_some();
+                if kept { ids.next().map_or(i, |id| Item::local(&id)) } else { i }
+            })
+            .collect();
+        Ok((kept, added))
     }
 
     pub fn soloist_runs(&self) -> bool {
@@ -478,10 +745,33 @@ impl Engine {
         if key.is_empty() {
             return None;
         }
+        let mut from_service = None;
         let server = match &item.source {
             Source::Server { account } if !meta.art.is_empty() => self.server(account),
+            Source::Local => {
+                // A song without a file takes its picture from a personal server that has it.
+                let links = self.lib.as_ref().and_then(|l| l.track(&item.id)).map(|t| t.links.clone());
+                let names: Vec<(String, String)> = links
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|(_, l)| !l.art.is_empty())
+                    .filter_map(|(k, l)| Some((k.strip_prefix("server:")?.to_owned(), l.art)))
+                    .collect();
+                from_service = names.into_iter().find_map(|(n, art)| Some((self.server(&n)?, art)));
+                None
+            }
             _ => None,
         };
+        // While a song plays on Spotify, its picture is shown as the service gives it.
+        if let Some(p) = &self.playing
+            && p.remote
+            && p.item == *item
+            && p.item.source == Source::Local
+            && let Some(art) = self.remote.as_ref().map(|r| r.state().art).filter(|a| !a.is_empty())
+            && let Some(picture) = self.art.get(&art, || Some(ArtFrom::Web(art.clone())))
+        {
+            return Some(picture);
+        }
         let lib = self.lib.as_ref();
         self.art.get(&key, || match &item.source {
             Source::Local => {
@@ -495,7 +785,11 @@ impl Engine {
                     let album = t.album_key();
                     lib.tracks().find(|o| here(o) && o.album_key() == album)
                 };
-                Some(ArtFrom::File(lib.file(&from?.id)?))
+                match (from, from_service) {
+                    (Some(t), _) => Some(ArtFrom::File(lib.file(&t.id)?)),
+                    (None, Some((s, art))) => Some(ArtFrom::Server(s, art)),
+                    (None, None) => None,
+                }
             }
             Source::Server { .. } => Some(ArtFrom::Server(server?, meta.art.clone())),
             Source::Spotify if !meta.art.is_empty() => Some(ArtFrom::Web(meta.art.clone())),
@@ -518,7 +812,7 @@ impl Engine {
             Source::Local => {
                 let lib = self.lib.as_ref().ok_or("no library is open")?;
                 let t = lib.track(&item.id).ok_or("the song is no longer in the library")?;
-                if t.presence == Presence::Missing {
+                if t.presence.needs_service() {
                     return Err("the file has not arrived on this computer".to_owned());
                 }
                 Ok(Input::File(lib.file(&item.id).ok_or("the song has no file")?))
@@ -532,18 +826,98 @@ impl Engine {
         }
     }
 
-    /// Plays the queue's current item.
+    /// How an item is played now: a song's file when it is here, else the service in use.
+    fn way(&self, item: &Item) -> Result<Way, String> {
+        if item.source != Source::Local {
+            return Ok(Way::Play(item.clone()));
+        }
+        let lib = self.lib.as_ref().ok_or("no library is open")?;
+        let t = lib.track(&item.id).ok_or("the song is no longer in the library")?;
+        if !t.presence.needs_service() {
+            return Ok(Way::Play(item.clone()));
+        }
+        let service = self.active().ok_or("it has no file here and no streaming service is chosen, under Streaming")?;
+        let key = service.key();
+        if let Service::Open(site) = service {
+            return Ok(Way::Open(site.page(&t.info, t.links.get(&key)), site.name()));
+        }
+        match (fresh_link(t, &key), Source::from_key(&key)) {
+            (Some(l), _) if l.id.is_empty() => Err("the service in use does not have it".to_owned()),
+            (Some(l), Some(source)) => Ok(Way::Play(Item { source, id: l.id.clone(), meta: Some(t.meta()) })),
+            _ => Ok(Way::Search(service)),
+        }
+    }
+
+    /// The current item cannot be played. The queue goes on when it came to it by itself.
+    fn unplayable(&mut self, why: &str, auto: bool) {
+        self.player.stop();
+        self.playing = None;
+        self.waiting = None;
+        let title = self.queue.current().map(|i| self.meta(i).title).unwrap_or_default();
+        self.error("The song cannot be played: {}", &format!("{title}: {why}"));
+        if auto && self.passed < MAX_PASSED {
+            self.passed += 1;
+            self.advance(false);
+        }
+    }
+
+    /// Plays the queue's current item, which the person chose.
     fn start(&mut self) {
+        self.passed = 0;
+        self.begin(false);
+    }
+
+    /// Plays the queue's current item; `auto` when the queue came to it by itself.
+    fn begin(&mut self, auto: bool) {
         self.preloaded = None;
+        self.waiting = None;
         self.resolving = 0;
         let Some(item) = self.queue.current().cloned() else {
             self.stop();
             return;
         };
         let meta = self.meta(&item);
-        let remote = item.source == Source::Spotify;
-        self.playing =
-            Some(Playing { item: item.clone(), meta: meta.clone(), remote, number: 0, counted: false, held: false });
+        let way = match self.way(&item) {
+            Ok(w) => w,
+            Err(why) => return self.unplayable(&why, auto),
+        };
+        let play = match &way {
+            Way::Play(p) => p.clone(),
+            Way::Search(_) | Way::Open(..) => item.clone(),
+        };
+        let remote = play.source == Source::Spotify;
+        self.playing = Some(Playing {
+            item: item.clone(),
+            play: play.clone(),
+            elsewhere: None,
+            meta: meta.clone(),
+            remote,
+            number: 0,
+            counted: false,
+            held: false,
+        });
+        if !remote && let Some(r) = &self.remote {
+            r.stop();
+        }
+        match way {
+            Way::Play(_) => {}
+            Way::Search(service) => {
+                self.player.stop();
+                self.waiting = Some((item.id.clone(), service.key(), auto));
+                return self.search(&item.id, &service);
+            }
+            Way::Open(page, name) => {
+                self.player.stop();
+                self.to_open.push(page);
+                if let Some(p) = &mut self.playing {
+                    p.elsewhere = Some(name);
+                }
+                return;
+            }
+        }
+        self.passed = 0;
+        self.look_ahead();
+        let item = play;
         if remote {
             self.player.stop();
             match self.spotify() {
@@ -558,9 +932,6 @@ impl Engine {
             }
             return;
         }
-        if let Some(r) = &self.remote {
-            r.stop();
-        }
         if item.source == Source::Radio && radio::is_playlist(&item.id) {
             self.player.stop();
             self.resolve(item.id);
@@ -573,11 +944,16 @@ impl Engine {
                     p.number = n;
                 }
             }
-            Err(e) => {
-                self.player.stop();
-                self.playing = None;
-                self.error("The song cannot be played: {}", &e);
-            }
+            Err(e) => self.unplayable(&e, auto),
+        }
+    }
+
+    /// Looks for the next song on the service in use, so that it is ready when its turn comes.
+    fn look_ahead(&mut self) {
+        let Some(next) = self.queue.next_position(true) else { return };
+        let Some(item) = self.queue.items().get(next).cloned() else { return };
+        if let Ok(Way::Search(service)) = self.way(&item) {
+            self.search(&item.id, &service);
         }
     }
 
@@ -586,7 +962,17 @@ impl Engine {
         self.queue.set(items, start);
         if let Some(item) = self.queue.current().cloned() {
             let meta = self.meta(&item);
-            self.playing = Some(Playing { item, meta, remote: false, number: 0, counted: false, held: true });
+            let play = item.clone();
+            self.playing = Some(Playing {
+                item,
+                play,
+                elsewhere: None,
+                meta,
+                remote: false,
+                number: 0,
+                counted: false,
+                held: true,
+            });
         }
     }
 
@@ -615,6 +1001,7 @@ impl Engine {
         }
         self.playing = None;
         self.preloaded = None;
+        self.waiting = None;
         self.resolving = 0;
     }
 
@@ -624,25 +1011,22 @@ impl Engine {
         if std::mem::replace(&mut p.counted, true) {
             return;
         }
-        let item = p.item.clone();
-        match &item.source {
-            Source::Local => {
-                if let Some(lib) = &mut self.lib {
-                    // The song may have left the library while it played.
-                    lib.record_play(&item.id).ok();
-                }
-            }
-            Source::Server { account } => {
-                if let Some(s) = self.server(account) {
-                    let id = item.id.clone();
-                    // The count on the server is a courtesy; playing goes on without it.
-                    crate::spawn("scrobble", move || {
-                        s.scrobble(&id).ok();
-                    })
-                    .ok();
-                }
-            }
-            _ => {}
+        let (item, play) = (p.item.clone(), p.play.clone());
+        if item.source == Source::Local
+            && let Some(lib) = &mut self.lib
+        {
+            // The song may have left the library while it played.
+            lib.record_play(&item.id).ok();
+        }
+        if let Source::Server { account } = &play.source
+            && let Some(s) = self.server(account)
+        {
+            let id = play.id.clone();
+            // The count on the server is a courtesy; playing goes on without it.
+            crate::spawn("scrobble", move || {
+                s.scrobble(&id).ok();
+            })
+            .ok();
         }
     }
 
@@ -651,7 +1035,7 @@ impl Engine {
         match self.queue.next_position(ended) {
             Some(n) => {
                 self.queue.go(n);
-                self.start();
+                self.begin(true);
             }
             None => self.stop(),
         }
@@ -659,7 +1043,7 @@ impl Engine {
 
     fn follow_playback(&mut self) {
         let Some(p) = &self.playing else { return };
-        if p.held {
+        if p.held || p.elsewhere.is_some() {
             return;
         }
         if p.remote {
@@ -671,7 +1055,7 @@ impl Engine {
                     self.advance(true);
                 }
                 // Someone took the device over.
-                remote::Status::Idle if s.uri == p.item.id => {
+                remote::Status::Idle if s.uri == p.play.id => {
                     self.playing = None;
                     self.notice("Something else is playing on the Spotify device.", "", false);
                 }
@@ -684,10 +1068,10 @@ impl Engine {
             return;
         }
         let s = self.player.state();
-        if let Some((number, item)) = &self.preloaded
+        if let Some((number, item, play)) = &self.preloaded
             && s.current == *number
         {
-            let (number, item) = (*number, item.clone());
+            let (number, item, play) = (*number, item.clone(), play.clone());
             self.preloaded = None;
             self.count_play();
             let next = self.queue.next_position(true);
@@ -696,10 +1080,20 @@ impl Engine {
             }
             if self.queue.current() == Some(&item) {
                 let meta = self.meta(&item);
-                self.playing = Some(Playing { item, meta, remote: false, number, counted: false, held: false });
+                self.playing = Some(Playing {
+                    item,
+                    play,
+                    elsewhere: None,
+                    meta,
+                    remote: false,
+                    number,
+                    counted: false,
+                    held: false,
+                });
+                self.look_ahead();
             } else {
                 // The queue changed after the next song was made ready.
-                self.start();
+                self.begin(true);
             }
             return;
         }
@@ -732,12 +1126,13 @@ impl Engine {
             return;
         }
         let Some(item) = self.queue.items().get(next).cloned() else { return };
-        if !matches!(item.source, Source::Local | Source::Server { .. }) {
+        let Ok(Way::Play(play)) = self.way(&item) else { return };
+        if !matches!(play.source, Source::Local | Source::Server { .. }) {
             return;
         }
-        if let Ok(input) = self.input(&item) {
+        if let Ok(input) = self.input(&play) {
             let n = self.player.preload(input);
-            self.preloaded = Some((n, item));
+            self.preloaded = Some((n, item, play));
         }
     }
 
@@ -749,9 +1144,17 @@ impl Engine {
             duration_ms: p.meta.duration_ms,
             live: p.item.source == Source::Radio,
             status: NowStatus::Loading,
+            via: match (p.elsewhere, &p.play.source) {
+                (Some(name), _) => name.to_owned(),
+                (_, Source::Server { account }) => account.clone(),
+                (_, Source::Spotify) => "Spotify".to_owned(),
+                _ => String::new(),
+            },
             ..Now::default()
         };
-        if p.held {
+        if p.elsewhere.is_some() {
+            now.status = NowStatus::Elsewhere;
+        } else if p.held {
             now.status = NowStatus::Paused;
         } else if p.remote {
             let Some(r) = &self.remote else { return now };
@@ -783,6 +1186,7 @@ impl Engine {
 
     fn seek(&mut self, ms: u64) {
         match &self.playing {
+            Some(p) if p.elsewhere.is_some() => {}
             Some(p) if p.remote => {
                 if let Some(r) = &self.remote {
                     r.seek(ms);
@@ -801,8 +1205,14 @@ impl Engine {
             }
             return;
         };
-        if p.held {
+        // Opened elsewhere: opens it again.
+        if p.held || p.elsewhere.is_some() {
             self.start();
+            return;
+        }
+        if p.number == 0 && !p.remote {
+            // Still being looked for.
+            self.stop();
             return;
         }
         let pause = matches!(now.status, NowStatus::Playing | NowStatus::Loading);
@@ -905,7 +1315,59 @@ impl Engine {
                 self.lib_mut()?;
                 self.start_scan();
             }
+            Command::LibraryAdd { items } => {
+                let (kept, added) = self.keep(items)?;
+                let ids: Vec<&String> = kept.iter().filter(|i| i.source == Source::Local).map(|i| &i.id).collect();
+                let answer = json!({ "ids": ids, "added": added });
+                self.notice("Songs added to the library: {}", &added.to_string(), false);
+                return Ok(answer);
+            }
+            Command::SongAdd { title, artist, album } => {
+                let clean = |s: String| s.trim().to_owned();
+                let info = Info { title: clean(title), artist: clean(artist), album: clean(album), ..Info::default() };
+                if info.title.is_empty() || info.artist.is_empty() {
+                    return Err("a song needs a title and an artist".to_owned());
+                }
+                let (ids, added) = self.lib_mut()?.add_songs(vec![(info, None)]);
+                return Ok(json!({ "ids": ids, "added": added }));
+            }
+            Command::SongsImport { path } => return self.import_list(&path),
+            Command::ActiveService { service } => {
+                if !service.is_empty() {
+                    let s = Service::from_key(&service).ok_or("there is no such service")?;
+                    if !self.choices().contains(&s) {
+                        return Err("there is no account for this service".to_owned());
+                    }
+                }
+                if let Some(p) = &self.find {
+                    p.stop.store(true, Ordering::Relaxed);
+                }
+                self.change_settings(|s| s.active_service = service);
+            }
+            Command::LinkSet { id, service, to, art } => {
+                let s = Service::from_key(&service).ok_or("there is no such service")?;
+                let to = to.trim().to_owned();
+                if to.is_empty() || matches!(&s, Service::Open(site) if !site.accepts(&to)) {
+                    return Err("this is not an address of a song on the service".to_owned());
+                }
+                let art = if matches!(s, Service::Server(_)) { art } else { String::new() };
+                let link = Link { id: to, art, chosen: true, at: now_ms() };
+                self.lib_mut()?.set_link(&id, &service, &link).map_err(text)?;
+            }
+            Command::LinkClear { ids, service } => {
+                let lib = self.lib_mut()?;
+                for id in &ids {
+                    lib.clear_link(id, &service).map_err(text)?;
+                }
+            }
+            Command::FindAll => return self.find_all(),
+            Command::FindStop => {
+                if let Some(p) = &self.find {
+                    p.stop.store(true, Ordering::Relaxed);
+                }
+            }
             Command::PlaylistNew { name, items } => {
+                let (items, _) = self.keep(items)?;
                 return Ok(json!({ "id": self.lib_mut()?.create_playlist(&name, items, None) }));
             }
             Command::SmartNew { name, rules } => {
@@ -914,7 +1376,10 @@ impl Engine {
             Command::SmartSet { id, rules } => self.lib_mut()?.set_rules(&id, &rules).map_err(text)?,
             Command::PlaylistRename { id, name } => self.lib_mut()?.rename_playlist(&id, &name).map_err(text)?,
             Command::PlaylistDelete { id } => self.lib_mut()?.delete_playlist(&id).map_err(text)?,
-            Command::PlaylistAdd { id, items } => self.lib_mut()?.add_to_playlist(&id, items).map_err(text)?,
+            Command::PlaylistAdd { id, items } => {
+                let (items, _) = self.keep(items)?;
+                self.lib_mut()?.add_to_playlist(&id, items).map_err(text)?;
+            }
             Command::PlaylistSet { id, items } => self.lib_mut()?.set_items(&id, items).map_err(text)?,
             Command::PlaylistImport { path } => return self.import_playlist(&path),
             Command::PlaylistExport { id, path } => return self.export_playlist(&id, &path),
@@ -942,7 +1407,13 @@ impl Engine {
                 }
                 self.servers.clear();
                 self.pages.clear();
-                self.change_settings(|s| s.servers.retain(|a| a.name != name));
+                let key = Service::Server(name.clone()).key();
+                self.change_settings(|s| {
+                    s.servers.retain(|a| a.name != name);
+                    if s.active_service == key {
+                        s.active_service.clear();
+                    }
+                });
             }
             Command::SpotifySignIn { client_id } => return self.sign_in(&client_id),
             Command::SpotifySignOut => {
@@ -952,6 +1423,13 @@ impl Engine {
                 }
                 self.spotify = None;
                 self.remote = None;
+                // What came from the account goes with it; the songs stay.
+                if let Some(lib) = &mut self.lib {
+                    lib.clear_service("spotify");
+                }
+                if self.settings.active_service == "spotify" {
+                    self.change_settings(|s| s.active_service.clear());
+                }
                 self.spotify_name.clear();
                 self.pages.clear();
             }
@@ -985,11 +1463,23 @@ impl Engine {
                 return Ok(Value::Array(rows));
             }
             Command::Stations => return Ok(data(self.lib_mut()?.stations())),
+            Command::Services => {
+                let active = self.active();
+                let (songs, found, not_found) = self.coverage();
+                let list: Vec<Value> = self
+                    .choices()
+                    .iter()
+                    .map(|s| json!({ "service": s.key(), "name": s.name(), "active": active.as_ref() == Some(s) }))
+                    .collect();
+                return Ok(json!({
+                    "services": list, "without_file": songs, "found": found, "not_found": not_found,
+                }));
+            }
             Command::Now => {
                 let n = self.now();
                 return Ok(json!({
                     "item": n.item, "meta": n.meta, "status": format!("{:?}", n.status).to_lowercase(),
-                    "position_ms": n.position_ms, "stream_title": n.stream_title,
+                    "position_ms": n.position_ms, "via": n.via, "stream_title": n.stream_title,
                 }));
             }
             Command::Info => {
@@ -1082,8 +1572,11 @@ impl Engine {
         let entries = m3u::read(&bytes);
         let name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("Playlist").to_owned();
         let lib = self.lib_mut()?;
-        let by_path: HashMap<String, String> =
-            lib.tracks().map(|t| (t.info.path.to_lowercase(), t.id.clone())).collect();
+        let by_path: HashMap<String, String> = lib
+            .tracks()
+            .filter(|t| !t.info.path.is_empty())
+            .map(|t| (t.info.path.to_lowercase(), t.id.clone()))
+            .collect();
         let mut missing = 0usize;
         let mut items = Vec::new();
         for e in &entries {
@@ -1107,6 +1600,27 @@ impl Engine {
         let found = items.len();
         let id = lib.create_playlist(&name, items, None);
         Ok(json!({ "id": id, "songs": found, "missing": missing }))
+    }
+
+    /// Puts the songs of a list in the library. Its playlists are made anew.
+    fn import_list(&mut self, path: &Path) -> Result<Value, String> {
+        let size = std::fs::metadata(path).map_err(text)?.len();
+        if size > MAX_LIST {
+            return Err("the list is too large".to_owned());
+        }
+        let lines = crate::list::read(&std::fs::read(path).map_err(text)?)?;
+        let lib = self.lib_mut()?;
+        let (ids, added) = lib.add_songs(lines.iter().map(|l| (l.song.clone(), None)).collect());
+        let mut playlists: std::collections::BTreeMap<&str, Vec<Item>> = std::collections::BTreeMap::new();
+        for (l, id) in lines.iter().zip(&ids).filter(|(l, _)| !l.playlist.is_empty()) {
+            playlists.entry(&l.playlist).or_default().push(Item::local(id));
+        }
+        let n = playlists.len();
+        for (name, items) in playlists {
+            lib.create_playlist(name, items, None);
+        }
+        self.notice("Songs added to the library: {}", &added.to_string(), false);
+        Ok(json!({ "songs": ids.len(), "added": added, "playlists": n }))
     }
 
     fn export_playlist(&mut self, id: &str, path: &Path) -> Result<Value, String> {
@@ -1185,9 +1699,23 @@ pub fn entry_item(source: Source, e: &Entry) -> Item {
             artist: e.artist.clone(),
             album: e.album.clone(),
             duration_ms: e.duration_ms,
+            isrc: e.isrc.clone(),
+            year: e.year,
+            track: e.track,
             art: e.art.clone(),
         }),
     }
+}
+
+/// What a service's song is kept as. Only a personal server's artwork id is kept with it.
+fn link_to(service: &str, e: &Entry) -> Link {
+    let art = if service.starts_with("server:") { e.art.clone() } else { String::new() };
+    Link { id: e.id.clone(), art, chosen: false, at: now_ms() }
+}
+
+/// What a song is on a service, unless it was looked for in vain long ago.
+fn fresh_link<'a>(t: &'a Track, service: &str) -> Option<&'a Link> {
+    t.links.get(service).filter(|l| l.chosen || !l.id.is_empty() || now_ms().saturating_sub(l.at) < FORGET_MS)
 }
 
 fn millis(d: Duration) -> u64 {
@@ -1205,10 +1733,11 @@ pub fn next_repeat(r: Repeat) -> Repeat {
 
 #[cfg(test)]
 mod tests {
-    use super::Engine;
+    use super::{Engine, NowStatus};
     use crate::command::{Command, TagEdit};
-    use musiccraft_library::Item;
     use musiccraft_library::query::Sort;
+    use musiccraft_library::{Item, Meta, Source};
+    use musiccraft_services::subsonic::Server;
     use std::time::Duration;
 
     fn songs(e: &mut Engine, search: &str) -> Vec<serde_json::Value> {
@@ -1255,6 +1784,86 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         assert!(b.picture(&item, &meta).is_some(), "the picture inside the file is shown");
+    }
+
+    /// A stand-in for a personal server that has one song, whatever is asked.
+    fn server(id: &'static str, title: &'static str) -> Server {
+        use std::io::{BufRead, Write};
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", l.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for mut s in l.incoming().flatten() {
+                let mut line = String::new();
+                let mut r = std::io::BufReader::new(s.try_clone().unwrap());
+                r.read_line(&mut line).unwrap();
+                while r.read_line(&mut String::new()).unwrap() > 2 {}
+                let song = format!(r#"{{"id":"{id}","title":"{title}","artist":"Ada Verdi","duration":200}}"#);
+                let songs = if line.contains("search3") { song } else { String::new() };
+                let body = format!(r#"{{"subsonic-response":{{"status":"ok","searchResult3":{{"song":[{songs}]}}}}}}"#);
+                write!(s, "HTTP/1.1 200 X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).ok();
+            }
+        });
+        Server::new(&url, "me", "secret").unwrap()
+    }
+
+    fn song(title: &str) -> Item {
+        let meta = Meta { title: title.into(), artist: "Ada Verdi".into(), duration_ms: 200_000, ..Meta::default() };
+        Item { source: Source::Server { account: "one".into() }, id: "a1".into(), meta: Some(meta) }
+    }
+
+    /// A song kept from one service stays in its playlist when the service changes, and is played
+    /// from the new one, where it is found by itself; a song the new one lacks is said to be missing,
+    /// and nothing else is played for it.
+    #[test]
+    fn songs_outlive_the_service_they_came_from() {
+        let (root, dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let mut e = Engine::isolated(dir.path(), Some(root.path().to_owned()));
+        e.settle(Duration::from_secs(30));
+        e.use_server("one", server("a1", "Alba"));
+        e.use_server("two", server("b7", "Alba"));
+        let list =
+            e.run(Command::PlaylistNew { name: "Mia".into(), items: vec![song("Alba"), song("Notte")] }).unwrap();
+        let items = e.playlist_items(list["id"].as_str().unwrap()).unwrap();
+        assert!(items.iter().all(|i| i.source == Source::Local));
+        e.run(Command::ServerRemove { name: "one".into() }).unwrap();
+        e.use_server("two", server("b7", "Alba"));
+        e.run(Command::ActiveService { service: "server:two".into() }).unwrap();
+        e.run(Command::FindAll).unwrap();
+        e.settle(Duration::from_secs(30));
+        assert_eq!(e.coverage(), (2, 1, 1));
+        assert_eq!(e.library().unwrap().track(&items[0].id).unwrap().links["server:two"].id, "b7");
+        e.run(Command::Play { items: items.clone(), start: 1 }).unwrap();
+        assert!(e.now().item.is_none());
+        assert!(e.notices.iter().any(|n| n.error && n.detail.contains("Notte")));
+    }
+
+    /// With a service that plays only in its own app, the song's page is opened and the queue waits
+    /// there instead of running through every page.
+    #[test]
+    fn a_song_is_opened_in_the_services_own_app() {
+        let (root, dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let mut e = Engine::isolated(dir.path(), Some(root.path().to_owned()));
+        e.settle(Duration::from_secs(30));
+        e.run(Command::LibraryAdd { items: vec![song("Alba"), song("Notte")] }).unwrap();
+        let ids: Vec<String> = e.library().unwrap().tracks().map(|t| t.id.clone()).collect();
+        e.run(Command::ActiveService { service: "open:tidal".into() }).unwrap();
+        let link = |to: &str| Command::LinkSet {
+            id: ids[0].clone(),
+            service: "open:tidal".into(),
+            to: to.into(),
+            art: String::new(),
+        };
+        assert!(e.run(link("https://example.org/track/1")).is_err());
+        e.run(link("https://tidal.com/track/1")).unwrap();
+        let items = ids.iter().map(|i| Item::local(i)).collect();
+        e.run(Command::Play { items, start: 0 }).unwrap();
+        for _ in 0..5 {
+            e.tick();
+        }
+        assert_eq!((e.now().status, e.to_open.len()), (NowStatus::Elsewhere, 1));
+        e.run(Command::Next).unwrap();
+        assert_eq!(e.to_open[0], "https://tidal.com/track/1");
+        assert!(e.to_open[1].contains("search") && e.to_open[1].contains("Ada%20Verdi"));
     }
 
     /// Commands survive the trip through JSON that the command line takes them on.

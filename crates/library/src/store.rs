@@ -6,7 +6,8 @@
 //! and added up, so two computers playing at once lose nothing. Reading is idempotent: a conflict
 //! copy made by a sync service holds the same kind of cells and merges like any other file.
 
-use crate::model::{Info, Item, Playlist, Presence, Station, Track};
+use crate::model::{Info, Item, Link, Playlist, Presence, Station, Track};
+use crate::names::song_key;
 use crate::{now_ms, scan::ScanResult, smart::Rules};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -302,13 +303,21 @@ impl Library {
             return None;
         }
         let info: Info = self.field(&key, "info")?;
-        resolve(&self.root, &info.path)?;
+        if info.path.is_empty() {
+            if info.title.is_empty() {
+                return None;
+            }
+        } else {
+            resolve(&self.root, &info.path)?;
+        }
         let mut t = Track {
             id: id.to_owned(),
             added: self.field(&key, "added").unwrap_or(0),
             loved: self.field(&key, "loved").unwrap_or(false),
             rating: self.field::<u8>(&key, "rating").unwrap_or(0).min(5),
+            links: self.links(&key),
             presence: match self.presence.get(&info.path) {
+                _ if info.path.is_empty() => Presence::Stream,
                 Some(p) => *p,
                 None if self.scanned => Presence::Missing,
                 None => Presence::Here,
@@ -324,6 +333,104 @@ impl Library {
             }
         }
         Some(t)
+    }
+
+    fn links(&self, key: &str) -> BTreeMap<String, Link> {
+        let Some(record) = self.merged.get(key) else { return BTreeMap::new() };
+        record
+            .iter()
+            .filter_map(|(field, cell)| {
+                let service = field.strip_prefix("link:")?;
+                Some((service.to_owned(), serde_json::from_value(cell.v.clone()).ok()?))
+            })
+            .collect()
+    }
+
+    /// Says what a song is on a service.
+    pub fn set_link(&mut self, id: &str, service: &str, link: &Link) -> Result<(), LibraryError> {
+        let v = serde_json::to_value(link).unwrap_or(Value::Null);
+        self.write_link(id, service, v)
+    }
+
+    /// Forgets what a song is on a service.
+    pub fn clear_link(&mut self, id: &str, service: &str) -> Result<(), LibraryError> {
+        self.write_link(id, service, Value::Null)
+    }
+
+    fn write_link(&mut self, id: &str, service: &str, v: Value) -> Result<(), LibraryError> {
+        if !self.tracks.contains_key(id) {
+            return Err(LibraryError::NoTrack);
+        }
+        self.set(Section::Tracks, &format!("track/{id}"), &format!("link:{service}"), v);
+        self.touch(id);
+        Ok(())
+    }
+
+    /// Forgets everything that came from a service, when its account goes.
+    pub fn clear_service(&mut self, service: &str) {
+        let ids: Vec<String> =
+            self.tracks.values().filter(|t| t.links.contains_key(service)).map(|t| t.id.clone()).collect();
+        for id in ids {
+            self.set(Section::Tracks, &format!("track/{id}"), &format!("link:{service}"), Value::Null);
+        }
+        self.rebuild();
+    }
+
+    /// Puts songs without a file in the library, and says what each is on a service. A song that is
+    /// already there, with or without a file, is not added twice. Gives back the songs' ids, in
+    /// order, and how many are new.
+    pub fn add_songs(&mut self, songs: Vec<(Info, Option<(String, Link)>)>) -> (Vec<String>, usize) {
+        let mut by_key: HashMap<String, String> = HashMap::new();
+        let mut by_isrc: HashMap<String, String> = HashMap::new();
+        for t in self.tracks.values() {
+            by_key.insert(song_key(&t.info), t.id.clone());
+            if !t.info.isrc.is_empty() {
+                by_isrc.insert(t.info.isrc.to_ascii_uppercase(), t.id.clone());
+            }
+        }
+        let now = now_ms();
+        let (mut ids, mut added) = (Vec::new(), 0);
+        for (mut info, link) in songs {
+            info.path.clear();
+            let key = song_key(&info);
+            let isrc = info.isrc.to_ascii_uppercase();
+            let known = by_isrc.get(&isrc).filter(|_| !isrc.is_empty()).or_else(|| by_key.get(&key)).cloned();
+            let id = known.unwrap_or_else(|| {
+                // From the names, so two computers that add it at once give it the same id.
+                let id: String = Sha256::digest(format!("song\0{key}").as_bytes())
+                    .iter()
+                    .take(16)
+                    .map(|b| format!("{b:02x}"))
+                    .collect();
+                let record = format!("track/{id}");
+                added += 1;
+                if self.field::<bool>(&record, "removed").unwrap_or(false) {
+                    self.set(Section::Activity, &record, "removed", Value::from(false));
+                }
+                // Back after a removal, with the file it may have had since.
+                if self.field::<Info>(&record, "info").is_none() {
+                    let v = serde_json::to_value(&info).unwrap_or(Value::Null);
+                    self.set(Section::Tracks, &record, "info", v);
+                    self.set(Section::Tracks, &record, "added", Value::from(now));
+                }
+                by_key.insert(key, id.clone());
+                if !isrc.is_empty() {
+                    by_isrc.insert(isrc, id.clone());
+                }
+                id
+            });
+            if let Some((service, link)) = link {
+                let field = format!("link:{service}");
+                let record = format!("track/{id}");
+                let old: Option<Link> = self.field(&record, &field);
+                if old.is_none_or(|o| !o.chosen && o.id != link.id) {
+                    self.set(Section::Tracks, &record, &field, serde_json::to_value(link).unwrap_or(Value::Null));
+                }
+            }
+            ids.push(id);
+        }
+        self.rebuild();
+        (ids, added)
     }
 
     fn rebuild(&mut self) {
@@ -466,6 +573,7 @@ impl Library {
             .iter()
             .filter(|(k, _)| k.starts_with("track/"))
             .filter_map(|(k, _)| self.field::<Info>(k, "info"))
+            .filter(|i| !i.path.is_empty())
             .map(|i| (i.path.clone(), i))
             .collect()
     }
@@ -479,13 +587,19 @@ impl Library {
         for key in self.merged.keys() {
             if let Some(id) = key.strip_prefix("track/")
                 && let Some(info) = self.field::<Info>(key, "info")
+                && !info.path.is_empty()
             {
                 by_path.insert(info.path, id.to_owned());
             }
         }
         // Songs whose file is gone: a new file with the same content is the same song, moved.
         let mut gone: HashMap<(u64, String, String), Vec<String>> = HashMap::new();
-        for t in self.tracks.values().filter(|t| !self.presence.contains_key(&t.info.path)) {
+        // Songs that had no file: a file of the same song becomes theirs.
+        let mut waiting: HashMap<String, (String, u64)> = HashMap::new();
+        for t in self.tracks.values().filter(|t| t.info.path.is_empty()) {
+            waiting.insert(song_key(&t.info), (t.id.clone(), t.info.duration_ms));
+        }
+        for t in self.tracks.values().filter(|t| !t.info.path.is_empty() && !self.presence.contains_key(&t.info.path)) {
             gone.entry((t.info.size, t.info.title.clone(), t.info.album.clone())).or_default().push(t.id.clone());
         }
         let now = now_ms();
@@ -500,7 +614,15 @@ impl Library {
                 }
                 continue;
             }
-            let moved = if info.guessed {
+            let key = song_key(&info);
+            let close = |ms: u64| ms == 0 || info.duration_ms == 0 || ms.abs_diff(info.duration_ms) <= 5_000;
+            let arrived = waiting.get(&key).filter(|(_, ms)| close(*ms)).map(|(id, _)| id.clone());
+            if arrived.is_some() {
+                waiting.remove(&key);
+            }
+            let moved = if arrived.is_some() {
+                arrived
+            } else if info.guessed {
                 None
             } else {
                 gone.get_mut(&(info.size, info.title.clone(), info.album.clone())).and_then(Vec::pop)
@@ -544,6 +666,15 @@ impl Library {
     /// Changes a song's tags, in the file and in the library.
     pub fn edit(&mut self, id: &str, change: impl FnOnce(&mut Info)) -> Result<(), LibraryError> {
         let track = self.tracks.get(id).ok_or(LibraryError::NoTrack)?;
+        if track.info.path.is_empty() {
+            let mut info = track.info.clone();
+            change(&mut info);
+            info.path.clear();
+            let value = serde_json::to_value(&info).unwrap_or(Value::Null);
+            self.set(Section::Tracks, &format!("track/{id}"), "info", value);
+            self.touch(id);
+            return Ok(());
+        }
         let file = self.file(id).ok_or(LibraryError::NoTrack)?;
         let meta = std::fs::metadata(&file).map_err(|_| LibraryError::NotHere)?;
         if crate::cloud::online_only(&meta) {
@@ -750,7 +881,7 @@ pub fn resolve(root: &Path, rel: &str) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{Library, resolve};
-    use crate::model::{Info, Item, Presence};
+    use crate::model::{Info, Item, Link, Presence};
     use crate::scan::ScanResult;
     use std::path::Path;
 
@@ -859,6 +990,68 @@ mod tests {
         assert!(a.is_empty());
         assert_eq!(a.restore_removed(), 1);
         assert_eq!(a.len(), 1);
+    }
+
+    fn song(title: &str) -> Info {
+        Info { title: title.into(), artist: "Ada".into(), album: "X".into(), duration_ms: 200_000, ..Info::default() }
+    }
+
+    fn link(id: &str) -> Link {
+        Link { id: id.into(), at: 1, ..Link::default() }
+    }
+
+    /// A song without a file keeps its id, plays and playlists through a change of service and when
+    /// its file arrives; two computers that add it agree on the id.
+    #[test]
+    fn a_song_outlives_its_services_and_takes_its_file() {
+        let (shared, la, lb) =
+            (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let mut a = open(shared.path(), la.path(), "aaa");
+        let mut b = open(shared.path(), lb.path(), "bbb");
+        let (ids, n) = a.add_songs(vec![(song("Uno"), Some(("spotify".into(), link("s1"))))]);
+        let (other, _) = b.add_songs(vec![(song("UNO (feat. Bea)"), Some(("server:casa".into(), link("c1"))))]);
+        assert_eq!((n, &ids), (1, &other));
+        let id = ids[0].clone();
+        a.record_play(&id).unwrap();
+        a.save().unwrap();
+        b.save().unwrap();
+        a.refresh();
+        let t = a.track(&id).unwrap();
+        assert_eq!((t.presence, t.links.len()), (Presence::Stream, 2));
+        a.clear_service("spotify");
+        assert_eq!(a.track(&id).unwrap().links.keys().collect::<Vec<_>>(), ["server:casa"]);
+        let mut scan = ScanResult::default();
+        scan.presence.insert("Ada/X/Uno.mp3".into(), Presence::Here);
+        scan.read.push(Info { path: "Ada/X/Uno.mp3".into(), duration_ms: 201_000, size: 9, ..song("Uno") });
+        assert_eq!(a.apply_scan(scan), 0);
+        let t = a.track(&id).unwrap();
+        assert_eq!((t.presence, t.plays, a.len()), (Presence::Here, 1, 1));
+    }
+
+    /// Another take with the same title is not taken for the song, and adding a song that is here
+    /// as a file adds nothing.
+    #[test]
+    fn songs_are_not_confused_or_doubled() {
+        let (shared, la) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let mut a = open(shared.path(), la.path(), "aaa");
+        a.add_songs(vec![(song("Uno"), None)]);
+        let mut scan = ScanResult::default();
+        scan.presence.insert("u.mp3".into(), Presence::Here);
+        scan.read.push(Info { path: "u.mp3".into(), duration_ms: 420_000, size: 9, ..song("Uno") });
+        assert_eq!(a.apply_scan(scan), 1, "a much longer recording is another song");
+        assert_eq!(a.add_songs(vec![(song("uno"), Some(("spotify".into(), link("z"))))]).1, 0);
+    }
+
+    /// A match the person chose is not replaced by one that was found.
+    #[test]
+    fn a_chosen_match_stays() {
+        let (shared, la) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let mut a = open(shared.path(), la.path(), "aaa");
+        let chosen = Link { chosen: true, ..link("mine") };
+        let (ids, _) = a.add_songs(vec![(song("Uno"), None)]);
+        a.set_link(&ids[0], "spotify", &chosen).unwrap();
+        a.add_songs(vec![(song("Uno"), Some(("spotify".into(), link("found"))))]);
+        assert_eq!(a.track(&ids[0]).unwrap().links["spotify"], chosen);
     }
 
     /// A shared file cannot point MusicCraft at anything outside the music folder.

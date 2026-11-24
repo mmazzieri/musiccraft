@@ -26,6 +26,8 @@ pub struct Row {
     pub plays: u64,
     pub added: u64,
     pub presence: Presence,
+    /// The service in use was asked for it and does not have it.
+    pub lacking: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -392,7 +394,7 @@ impl Table<'_> {
                 egui::StrokeKind::Inside,
             );
         }
-        let absent = row.presence == Presence::Missing;
+        let absent = row.lacking || row.presence == Presence::Missing;
         let text = match (selected, absent, playing) {
             (true, _, _) => t.on_selection,
             (_, true, _) => t.weak,
@@ -414,6 +416,8 @@ impl Table<'_> {
                     let mut inner = cell;
                     let mark = match row.presence {
                         _ if playing => Some(Icon::Speaker),
+                        _ if row.lacking => Some(Icon::Missing),
+                        Presence::Stream => Some(Icon::Waves),
                         Presence::Cloud => Some(Icon::Cloud),
                         Presence::Missing => Some(Icon::Missing),
                         Presence::Here => None,
@@ -450,6 +454,8 @@ impl Table<'_> {
             let mut name = format!("{}, {}, {}", row.title, row.artist, row.album);
             let state_text = match row.presence {
                 _ if playing => l.t("playing"),
+                _ if row.lacking => l.t("the service in use does not have it"),
+                Presence::Stream => l.t("plays from the streaming service in use"),
                 Presence::Cloud => l.t("in the cloud, not downloaded yet"),
                 Presence::Missing => l.t("the file is not on this computer"),
                 Presence::Here => "",
