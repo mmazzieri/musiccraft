@@ -317,3 +317,23 @@ the list has no songs	l'elenco non contiene brani
 {} (opens in its own app)	{} (si apre nella sua app)
 {} song has no file here.	{} brano non ha un file su questo computer.
 {} songs have no file here.	{} brani non hanno un file su questo computer.
+All songs are added without their files and play from the streaming service in use.	Tutti i brani vengono aggiunti senza file e riprodotti dal servizio di streaming in uso.
+Choose the File…	Scegli il file…
+Copy the files into the library folder ({})	Copia i file nella cartella della libreria ({})
+Exported library (XML)	Libreria esportata (XML)
+Files not copied, whose songs were added without them: {}	File non copiati, i cui brani sono stati aggiunti senza: {}
+Films, podcasts, audiobooks and streams left out: {}.	Film, podcast, audiolibri e flussi esclusi: {}.
+From Apple Music on a Mac: choose File › Library › Export Library…	Da Apple Music su Mac: scegli File › Libreria › Esporta libreria…
+From iTunes: choose File › Library › Export Library… there and save the file.	Da iTunes: scegli lì File › Libreria › Esporta libreria… e salva il file.
+Import	Importa
+Import a Library	Importa una libreria
+Import a Library…	Importa una libreria…
+Library imported. Songs / files copied / playlists: {}	Libreria importata. Brani / file copiati / playlist: {}
+Songs without a file play from the streaming service in use. Smart playlists become ordinary ones with the songs they have now.	I brani senza file vengono riprodotti dal servizio di streaming in uso. Le playlist intelligenti diventano normali, con i brani che contengono ora.
+Songs, stars, love, play counts, dates and playlists come from a library file in XML.	Brani, voti, «Mi piace», ascolti, date e playlist vengono presi da un file di libreria in XML.
+Songs: {}. Playlists: {}.	Brani: {}. Playlist: {}.
+The library file could not be read: {}	Il file della libreria non è leggibile: {}
+The other program's library and files are only read, never changed.	La libreria e i file dell'altro programma vengono solo letti, mai modificati.
+With a file on this computer: {}. Without: {}.	Con il file su questo computer: {}. Senza: {}.
+this is not an exported library	questa non è una libreria esportata
+the exported library has no songs	la libreria esportata non contiene brani

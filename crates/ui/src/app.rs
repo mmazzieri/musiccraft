@@ -86,6 +86,7 @@ pub enum Action {
     ChooseLibrary,
     ImportPlaylist,
     ImportSongs,
+    ImportLibrary,
     ExportPlaylist(String, String),
     Reveal(String),
     Browse(String),
@@ -364,6 +365,14 @@ impl App {
                         }
                     }
                 }
+                Action::ImportLibrary => {
+                    let d = rfd::FileDialog::new().add_filter(self.lang.t("Exported library (XML)"), &["xml"]);
+                    if let Some(path) = d.pick_file()
+                        && let Err(e) = self.engine.run(Command::ExportedRead { path })
+                    {
+                        self.engine.error("The library file could not be read: {}", &e);
+                    }
+                }
                 Action::ImportSongs => {
                     let d = rfd::FileDialog::new().add_filter(self.lang.t("Song lists"), &["csv", "tsv", "txt"]);
                     if let Some(path) = d.pick_file()
@@ -528,6 +537,11 @@ impl eframe::App for App {
             self.add(dropped);
         }
         self.frame(ui);
+        if self.dialog.is_none()
+            && let Some(i) = self.engine.incoming.take()
+        {
+            self.dialog = Some(Dialog::Incoming { incoming: i, copy: true });
+        }
         dialogs::show(self, &ctx);
         let now = self.engine.now();
         let spoken = match (now.status, self.engine.notices.last()) {

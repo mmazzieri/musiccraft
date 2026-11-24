@@ -304,6 +304,9 @@ impl App {
             if !progress.is_empty() {
                 ui.spinner();
                 ui.label(progress);
+                if self.engine.import_progress().is_some() && ui.button(self.lang.t("Stop")).clicked() {
+                    self.cmd(Command::ImportStop);
+                }
                 return;
             }
             let summary = self.summary();

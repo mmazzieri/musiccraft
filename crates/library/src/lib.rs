@@ -34,7 +34,7 @@ pub mod store;
 pub mod tags;
 
 pub use model::{Item, Link, Meta, Playlist, Source, Station, Track};
-pub use store::{Library, LibraryError};
+pub use store::{History, Library, LibraryError};
 
 use std::path::PathBuf;
 

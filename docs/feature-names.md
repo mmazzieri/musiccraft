@@ -7,6 +7,7 @@ on 2026-11-24. Labels are ordinary descriptive words. The trademark registers we
 | --- | --- |
 | Play queue | Descriptive. *Up Next* is another product's label and is not used. |
 | Song Information | Descriptive. *Get Info* is not used. |
+| Import a Library | Descriptive. iTunes and Apple Music are named only to say where the file comes from. |
 | Service in use | Descriptive. |
 | Compact Player | Descriptive. |
 | Smart Lists, Smart Playlist | Used descriptively by unrelated players (Navidrome and Plex, among others). |

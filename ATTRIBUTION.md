@@ -8,7 +8,9 @@ documentation: the [Subsonic](https://www.subsonic.org/pages/api.jsp) and
 [OpenSubsonic](https://opensubsonic.netlify.app/) APIs, the
 [Spotify Web API](https://developer.spotify.com/documentation/web-api) and
 [Spotify Soloist](https://developer.spotify.com/documentation/soloist), and
-[Radio Browser](https://www.radio-browser.info). Services that open in their own app are reached only by
+[Radio Browser](https://www.radio-browser.info). The exported library is an XML property list
+([DTD](https://www.apple.com/DTDs/PropertyList-1.0.dtd)); what its values mean follows Apple's public documentation of
+the iTunes Library framework, and its keys are the words in the text. No program's database is read. Services that open in their own app are reached only by
 their public web addresses; no interface of theirs is used.
 
 ## Our own material
@@ -36,7 +38,7 @@ their public web addresses; no interface of theirs is used.
 | Crate | License |
 |---|---|
 | egui, eframe, egui_kittest (tests) | MIT OR Apache-2.0 |
-| craft-atomic, craft-csv (storytold/craft-libs) | MIT OR Apache-2.0 |
+| craft-atomic, craft-csv, craft-docpath, craft-plist (storytold/craft-libs) | MIT OR Apache-2.0 |
 | rodio, cpal | MIT OR Apache-2.0; Apache-2.0 |
 | symphonia (through rodio) | MPL-2.0, unmodified |
 | lofty | MIT OR Apache-2.0 |

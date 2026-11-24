@@ -102,6 +102,18 @@ struct Merged {
     device: String,
 }
 
+/// What another program knew about a song.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct History {
+    /// Milliseconds since 1970; 0 when it is not known. So is `last_played`.
+    pub added: u64,
+    pub rating: u8,
+    pub loved: bool,
+    pub plays: u64,
+    pub skips: u64,
+    pub last_played: u64,
+}
+
 /// An open library.
 pub struct Library {
     root: PathBuf,
@@ -325,6 +337,12 @@ impl Library {
             info,
             ..Track::default()
         };
+        // Counts from another program are one field, so importing them again adds nothing.
+        if let Some(c) = self.field::<Counter>(&key, "imported") {
+            t.plays = c.plays;
+            t.skips = c.skips;
+            t.last_played = c.last;
+        }
         if let Some(by_device) = self.counts.get(id) {
             for c in by_device.values() {
                 t.plays = t.plays.saturating_add(c.plays);
@@ -757,6 +775,60 @@ impl Library {
 
     pub fn record_skip(&mut self, id: &str) -> Result<(), LibraryError> {
         self.count(id, |c| c.skips = c.skips.saturating_add(1))
+    }
+
+    /// The song whose file has this path below `Music/`.
+    pub fn paths(&self) -> HashMap<String, String> {
+        self.tracks.values().filter(|t| !t.info.path.is_empty()).map(|t| (t.info.path.clone(), t.id.clone())).collect()
+    }
+
+    /// Takes in what another program knew about songs. The person's own stars and love in this
+    /// library are kept; a date is taken when it is earlier; counts replace those imported before.
+    pub fn add_history(&mut self, songs: &[(String, History)]) {
+        for (id, h) in songs {
+            let Some(added) = self.tracks.get(id).map(|t| t.added) else { continue };
+            let key = format!("track/{id}");
+            if h.added > 0 && (added == 0 || h.added < added) {
+                self.set(Section::Tracks, &key, "added", Value::from(h.added));
+            }
+            if h.rating > 0 && self.field::<u8>(&key, "rating").is_none() {
+                self.set(Section::Activity, &key, "rating", Value::from(h.rating.min(5)));
+            }
+            if h.loved && self.field::<bool>(&key, "loved").is_none() {
+                self.set(Section::Activity, &key, "loved", Value::from(true));
+            }
+            let counts = Counter { plays: h.plays, skips: h.skips, last: h.last_played };
+            let old: Counter = self.field(&key, "imported").unwrap_or_default();
+            if counts != old {
+                let v = serde_json::to_value(counts).unwrap_or(Value::Null);
+                self.set(Section::Activity, &key, "imported", v);
+            }
+        }
+        self.rebuild();
+    }
+
+    /// Makes the playlists of another program, each under an id that follows from `origin`, so
+    /// importing again makes none twice. One that is there, perhaps edited since, stays as it is; one
+    /// that was deleted comes back. Gives back how many were made.
+    pub fn add_playlists(&mut self, lists: Vec<(String, String, Vec<Item>)>) -> usize {
+        let mut made = 0;
+        for (origin, name, items) in lists {
+            let hash = Sha256::digest(format!("playlist\0{origin}").as_bytes());
+            let id: String = hash.iter().take(16).map(|b| format!("{b:02x}")).collect();
+            if self.playlist(&id).is_some() {
+                continue;
+            }
+            made += 1;
+            let key = format!("playlist/{id}");
+            self.set(Section::Playlists, &key, "name", Value::from(name));
+            self.set(Section::Playlists, &key, "created", Value::from(now_ms()));
+            self.set(Section::Playlists, &key, "items", serde_json::to_value(items).unwrap_or(Value::Null));
+            if self.field::<bool>(&key, "removed").unwrap_or(false) {
+                self.set(Section::Playlists, &key, "removed", Value::from(false));
+            }
+        }
+        self.rebuild_lists();
+        made
     }
 
     // ---- playlists and stations ----

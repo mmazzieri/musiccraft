@@ -31,6 +31,8 @@ UTF-8 JSON:
   later than the one it replaces, even when that one came from a clock running ahead.
 - **Counters** belong to one device and only grow; what is shown is the sum over devices. Two files of one
   device (a conflict copy made by a sync service) count once, by the greatest value.
+- `imported` has the form of a counter and is added to the sum; importing again replaces it. Playlists of
+  another program have an id made from theirs, so they are not made twice.
 - Reading is idempotent, so conflict copies need no handling. A file that cannot be read is passed over and
   named in Settings; a damaged file of this computer is set aside (`*.damaged-<time>`) and its copy on this
   computer is used.
@@ -38,7 +40,7 @@ UTF-8 JSON:
 | Record | Fields | Section |
 | --- | --- | --- |
 | `track/<id>` | `info` (path, tags, size, duration), `added`, `link:<service>` | tracks |
-| `track/<id>` | `loved`, `rating` (0–5), `removed` | activity |
+| `track/<id>` | `loved`, `rating` (0–5), `removed`, `imported` (counts from another program) | activity |
 | `playlist/<id>` | `name`, `created`, `items` or `smart`, `removed` | playlists |
 | `station/<id>` | `station`, `removed` | playlists |
 

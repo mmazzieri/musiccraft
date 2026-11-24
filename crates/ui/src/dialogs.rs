@@ -5,6 +5,7 @@ use crate::i18n::{LANGUAGES, Lang, time};
 use crate::theme::tokens;
 use egui::{Key, Ui};
 use musiccraft_engine::command::TagEdit;
+use musiccraft_engine::core::Incoming;
 use musiccraft_engine::pages::{Page, PageState};
 use musiccraft_engine::{Command, Service, Theme};
 use musiccraft_library::Item;
@@ -30,6 +31,8 @@ pub enum Dialog {
     Station { name: String, url: String },
     Server { name: String, url: String, user: String, password: String },
     Soloist { path: String, key: String },
+    ImportLibrary,
+    Incoming { incoming: Incoming, copy: bool },
     Song { title: String, artist: String, album: String },
     Link { id: String, service: Service, song: Box<Info>, query: String, asked: String, page: String },
     Settings,
@@ -301,6 +304,51 @@ fn body(app: &mut App, ui: &mut Ui, dialog: &mut Dialog) -> bool {
             let (yes, no) = buttons(app, ui, app.lang.t("Start"), true);
             if yes {
                 app.cmd(Command::SoloistStart { path: path.clone(), key: std::mem::take(key) });
+            }
+            !(yes || no)
+        }
+        Dialog::ImportLibrary => {
+            ui.heading(app.lang.t("Import a Library"));
+            ui.label(
+                app.lang.t("Songs, stars, love, play counts, dates and playlists come from a library file in XML."),
+            );
+            ui.add_space(4.0);
+            ui.label(app.lang.t("From iTunes: choose File › Library › Export Library… there and save the file."));
+            ui.label(app.lang.t("From Apple Music on a Mac: choose File › Library › Export Library…"));
+            ui.label(
+                egui::RichText::new(app.lang.t("The other program's library and files are only read, never changed."))
+                    .color(weak),
+            );
+            let (yes, no) = buttons(app, ui, app.lang.t("Choose the File…"), true);
+            if yes {
+                app.act(Action::ImportLibrary);
+            }
+            !(yes || no)
+        }
+        Dialog::Incoming { incoming: i, copy } => {
+            ui.heading(app.lang.t("Import a Library"));
+            let songs = app.lang.number(i.songs);
+            let lists = app.lang.number(i.playlists);
+            ui.label(app.lang.f2("Songs: {}. Playlists: {}.", songs, lists));
+            let without = i.songs - i.files;
+            let here = app.lang.number(i.files);
+            ui.label(app.lang.f2("With a file on this computer: {}. Without: {}.", here, app.lang.number(without)));
+            if i.others > 0 {
+                let n = app.lang.number(i.others);
+                ui.label(app.lang.f("Films, podcasts, audiobooks and streams left out: {}.", n));
+            }
+            let size = format!("{:.1} GB", i.bytes as f64 / 1e9);
+            let size = if app.lang.code() == "it" { size.replace('.', ",") } else { size };
+            ui.checkbox(copy, app.lang.f("Copy the files into the library folder ({})", size));
+            let note = if *copy {
+                app.lang.t("Songs without a file play from the streaming service in use. Smart playlists become ordinary ones with the songs they have now.")
+            } else {
+                app.lang.t("All songs are added without their files and play from the streaming service in use.")
+            };
+            ui.label(egui::RichText::new(note).color(weak));
+            let (yes, no) = buttons(app, ui, app.lang.t("Import"), true);
+            if yes {
+                app.cmd(Command::ExportedImport { path: i.path.clone(), copy: *copy });
             }
             !(yes || no)
         }
