@@ -81,6 +81,7 @@ pub struct Notice {
 enum Event {
     Scan(Option<ScanResult>),
     Import(Report),
+    LibraryFile(Result<crate::library_file::Prepared, String>),
     Resolved(u64, Result<String, String>),
     SignedIn(String, Result<(Arc<Spotify>, String), String>),
     ServerChecked(ServerAccount, String, Result<(), String>),
@@ -329,7 +330,9 @@ impl Engine {
 
     /// Files copied, of how many, by the import under way.
     pub fn import_progress(&self) -> Option<(usize, usize)> {
-        self.import.as_ref().map(|p| (p.read.load(Ordering::Relaxed), self.import_total))
+        self.import
+            .as_ref()
+            .map(|p| (p.read.load(Ordering::Relaxed), self.import_total.max(p.found.load(Ordering::Relaxed))))
     }
 
     /// Whether something runs in the background.
@@ -373,6 +376,25 @@ impl Engine {
                 }
                 let detail = format!("{} / {}", r.copied, r.duplicates);
                 self.notice("Songs added / already there: {}", &detail, false);
+                self.start_scan();
+            }
+            Event::LibraryFile(result) => {
+                self.import = None;
+                match result {
+                    Ok(p) => {
+                        if let Some((path, why)) = p.failed.first() {
+                            let detail = format!("{path} ({why})");
+                            self.error("Some files could not be added: {}", &detail);
+                        }
+                        if let Some(lib) = self.lib.as_mut() {
+                            let r = crate::library_file::take(lib, p);
+                            let n = |k: &str| r.get(k).and_then(Value::as_u64).unwrap_or(0);
+                            let detail = format!("{} / {}", n("songs"), n("playlists"));
+                            self.notice("Library file imported, songs / playlists: {}", &detail, false);
+                        }
+                    }
+                    Err(e) => self.error("The library file could not be imported: {}", &e),
+                }
                 self.start_scan();
             }
             Event::Resolved(token, url) => {
@@ -1332,6 +1354,7 @@ impl Engine {
                 return Ok(json!({ "ids": ids, "added": added }));
             }
             Command::SongsImport { path } => return self.import_list(&path),
+            Command::LibraryFileImport { path } => return self.import_library_file(&path),
             Command::ActiveService { service } => {
                 if !service.is_empty() {
                     let s = Service::from_key(&service).ok_or("there is no such service")?;
@@ -1564,6 +1587,22 @@ impl Engine {
         self.import = Some(progress);
         self.import_total = n;
         Ok(json!({ "files": n }))
+    }
+
+    /// Starts importing another program's library file; see [`crate::library_file`].
+    fn import_library_file(&mut self, path: &Path) -> Result<Value, String> {
+        if self.import.is_some() {
+            return Err("files are already being added".to_owned());
+        }
+        let music = self.lib_mut()?.music_dir();
+        let progress = Arc::new(Progress::default());
+        let (tx, p, path) = (self.tx.clone(), progress.clone(), path.to_owned());
+        crate::spawn("library-file", move || {
+            tx.send(Event::LibraryFile(crate::library_file::prepare(&path, &music, &p))).ok();
+        })?;
+        self.import = Some(progress);
+        self.import_total = 0;
+        Ok(Value::Null)
     }
 
     /// Reads a playlist file; its entries are matched with the library by path, then by title.

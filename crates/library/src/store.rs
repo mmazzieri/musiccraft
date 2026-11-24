@@ -81,6 +81,27 @@ struct Counter {
 
 type Records = BTreeMap<String, BTreeMap<String, Cell>>;
 
+/// What [`Library::place`] looks songs up in.
+#[derive(Default)]
+struct Placing {
+    by_path: HashMap<String, String>,
+    waiting: HashMap<String, (String, u64)>,
+    gone: HashMap<(u64, String, String), Vec<String>>,
+}
+
+/// A song's history kept by another program, taken in by [`Library::add_history`].
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct History {
+    /// Milliseconds since 1970; 0 when not known.
+    pub added: u64,
+    pub plays: u64,
+    pub skips: u64,
+    pub last_played: u64,
+    /// 0 to 5 stars; 0 for none.
+    pub rating: u8,
+    pub loved: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct FileData {
     format: String,
@@ -583,66 +604,132 @@ impl Library {
         self.scanned = true;
         self.presence = scan.presence;
         self.aliases = scan.aliases;
-        let mut by_path: HashMap<String, String> = HashMap::new();
+        let mut ctx = self.placing(true);
+        let mut added = 0;
+        for info in scan.read {
+            if self.place(info, &mut ctx).1 {
+                added += 1;
+            }
+        }
+        self.rebuild();
+        added
+    }
+
+    /// Takes in files just put in the music folder, before the next scan finds them. Gives back
+    /// each one's song id, in order (none for a path outside the music folder), and how many
+    /// songs are new.
+    pub fn add_files(&mut self, infos: Vec<Info>) -> (Vec<Option<String>>, usize) {
+        let mut ctx = self.placing(false);
+        let (mut ids, mut added) = (Vec::new(), 0);
+        for info in infos {
+            if resolve(&self.root, &info.path).is_none() {
+                ids.push(None);
+                continue;
+            }
+            self.presence.insert(info.path.clone(), Presence::Here);
+            let (id, new) = self.place(info, &mut ctx);
+            added += usize::from(new);
+            ids.push(Some(id));
+        }
+        self.rebuild();
+        (ids, added)
+    }
+
+    /// What [`Library::place`] looks songs up in. `moves`: whether songs whose file is gone may
+    /// take a new file, which only a whole scan can tell.
+    fn placing(&self, moves: bool) -> Placing {
+        let mut ctx = Placing::default();
         for key in self.merged.keys() {
             if let Some(id) = key.strip_prefix("track/")
                 && let Some(info) = self.field::<Info>(key, "info")
                 && !info.path.is_empty()
             {
-                by_path.insert(info.path, id.to_owned());
+                ctx.by_path.insert(info.path, id.to_owned());
             }
+        }
+        // Songs that had no file: a file of the same song becomes theirs.
+        for t in self.tracks.values().filter(|t| t.info.path.is_empty()) {
+            ctx.waiting.insert(song_key(&t.info), (t.id.clone(), t.info.duration_ms));
         }
         // Songs whose file is gone: a new file with the same content is the same song, moved.
-        let mut gone: HashMap<(u64, String, String), Vec<String>> = HashMap::new();
-        // Songs that had no file: a file of the same song becomes theirs.
-        let mut waiting: HashMap<String, (String, u64)> = HashMap::new();
-        for t in self.tracks.values().filter(|t| t.info.path.is_empty()) {
-            waiting.insert(song_key(&t.info), (t.id.clone(), t.info.duration_ms));
-        }
-        for t in self.tracks.values().filter(|t| !t.info.path.is_empty() && !self.presence.contains_key(&t.info.path)) {
-            gone.entry((t.info.size, t.info.title.clone(), t.info.album.clone())).or_default().push(t.id.clone());
-        }
-        let now = now_ms();
-        let mut added = 0;
-        for info in scan.read {
-            let value = serde_json::to_value(&info).unwrap_or(Value::Null);
-            if let Some(id) = by_path.get(&info.path) {
-                let key = format!("track/{id}");
-                let old: Option<Info> = self.field(&key, "info");
-                if old.as_ref() != Some(&info) {
-                    self.set(Section::Tracks, &key, "info", value);
-                }
-                continue;
+        if moves {
+            for t in
+                self.tracks.values().filter(|t| !t.info.path.is_empty() && !self.presence.contains_key(&t.info.path))
+            {
+                ctx.gone
+                    .entry((t.info.size, t.info.title.clone(), t.info.album.clone()))
+                    .or_default()
+                    .push(t.id.clone());
             }
-            let key = song_key(&info);
-            let close = |ms: u64| ms == 0 || info.duration_ms == 0 || ms.abs_diff(info.duration_ms) <= 5_000;
-            let arrived = waiting.get(&key).filter(|(_, ms)| close(*ms)).map(|(id, _)| id.clone());
-            if arrived.is_some() {
-                waiting.remove(&key);
-            }
-            let moved = if arrived.is_some() {
-                arrived
-            } else if info.guessed {
-                None
-            } else {
-                gone.get_mut(&(info.size, info.title.clone(), info.album.clone())).and_then(Vec::pop)
-            };
-            let id = match moved {
-                Some(id) => id,
-                None => {
-                    added += 1;
-                    self.free_id(&info)
-                }
-            };
+        }
+        ctx
+    }
+
+    /// Records a file's song: the song of its path, a song that was waiting for a file, a song
+    /// whose file moved, or a new one. Gives back its id and whether it is new.
+    fn place(&mut self, info: Info, ctx: &mut Placing) -> (String, bool) {
+        let value = serde_json::to_value(&info).unwrap_or(Value::Null);
+        if let Some(id) = ctx.by_path.get(&info.path).cloned() {
             let key = format!("track/{id}");
-            self.set(Section::Tracks, &key, "info", value);
-            if self.field::<u64>(&key, "added").is_none() {
-                self.set(Section::Tracks, &key, "added", Value::from(now));
+            let old: Option<Info> = self.field(&key, "info");
+            if old.as_ref() != Some(&info) {
+                self.set(Section::Tracks, &key, "info", value);
             }
-            by_path.insert(info.path, id);
+            return (id, false);
         }
-        self.rebuild();
-        added
+        let key = song_key(&info);
+        let close = |ms: u64| ms == 0 || info.duration_ms == 0 || ms.abs_diff(info.duration_ms) <= 5_000;
+        let arrived = ctx.waiting.get(&key).filter(|(_, ms)| close(*ms)).map(|(id, _)| id.clone());
+        if arrived.is_some() {
+            ctx.waiting.remove(&key);
+        }
+        let moved = if arrived.is_some() {
+            arrived
+        } else if info.guessed {
+            None
+        } else {
+            ctx.gone.get_mut(&(info.size, info.title.clone(), info.album.clone())).and_then(Vec::pop)
+        };
+        let (id, new) = match moved {
+            Some(id) => (id, false),
+            None => (self.free_id(&info), true),
+        };
+        let record = format!("track/{id}");
+        self.set(Section::Tracks, &record, "info", value);
+        if self.field::<u64>(&record, "added").is_none() {
+            self.set(Section::Tracks, &record, "added", Value::from(now_ms()));
+        }
+        ctx.by_path.insert(info.path, id.clone());
+        (id, new)
+    }
+
+    /// Takes in a song's history from another program. It only adds: an earlier date added, more
+    /// plays or skips than this computer counted, a rating or love the song does not have yet.
+    /// Taking the same history in twice changes nothing the second time.
+    pub fn add_history(&mut self, id: &str, h: &History) -> Result<(), LibraryError> {
+        let track = self.tracks.get(id).ok_or(LibraryError::NoTrack)?;
+        let (added, rating, loved) = (track.added, track.rating, track.loved);
+        let record = format!("track/{id}");
+        if h.added > 0 && (added == 0 || h.added < added) {
+            self.set(Section::Tracks, &record, "added", Value::from(h.added));
+        }
+        if h.rating > 0 && rating == 0 {
+            self.set(Section::Activity, &record, "rating", Value::from(h.rating.min(5)));
+        }
+        if h.loved && !loved {
+            self.set(Section::Activity, &record, "loved", Value::from(true));
+        }
+        let own =
+            self.own.get(Section::Activity as usize).and_then(|o| o.counters.get(id)).copied().unwrap_or_default();
+        if h.plays > own.plays || h.skips > own.skips || h.last_played > own.last {
+            self.count(id, |c| {
+                c.plays = c.plays.max(h.plays);
+                c.skips = c.skips.max(h.skips);
+                c.last = c.last.max(h.last_played);
+            })?;
+        }
+        self.touch(id);
+        Ok(())
     }
 
     /// The id of a new file. It follows from the path, so two computers that find the same file

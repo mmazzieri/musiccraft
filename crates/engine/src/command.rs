@@ -100,6 +100,11 @@ pub enum Command {
     SongsImport {
         path: PathBuf,
     },
+    /// Imports the library file that iTunes and the Music app export: songs, with their files
+    /// copied into the music folder, plays, ratings, playlists and radio stations.
+    LibraryFileImport {
+        path: PathBuf,
+    },
     /// The service that plays songs without a file; empty for none.
     ActiveService {
         service: String,

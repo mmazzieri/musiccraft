@@ -34,6 +34,11 @@ app, and it is not affiliated with ArtCraft, Apple or Spotify. Other projects us
     service's own app or web player: its page if you gave it, otherwise a search.
   - Add songs from a service, by hand, or from a CSV list with title and artist columns.
 - **Playlists**: ordinary and smart ones (rules with all/any, limit and order), M3U/M3U8 and PLS in, M3U8 out.
+- **Moving from iTunes or the Music app**: File › Import Library File… reads the library file they export
+  (iTunes for Windows: File › Library › Export Library…). The songs' files are copied into the music folder;
+  songs whose file is not found stay as songs without a file. Plays, skips, ratings, loved songs, dates
+  added, playlists and internet radio come along. Smart playlists come as the songs they held, without their
+  rules. Importing the same file again adds nothing twice.
 - **Shared folder**: each computer writes only its own catalogue files
   ([format](docs/library-format.md)). Songs that are still only in the cloud are listed without downloading
   them, and downloaded when played.
@@ -57,7 +62,8 @@ app, and it is not affiliated with ArtCraft, Apple or Spotify. Other projects us
   contents of playlists you own or work on.
 - No Opus, WMA, APE or DSD, no HE-AAC at its full bandwidth, no equalizer, no CD ripping or burning, no phone
   sync, no podcasts, no lyrics.
-- It does not read other programs' libraries. Export playlists from them as M3U and add the files.
+- Other programs' libraries are not read, except the file iTunes and the Music app export. Export playlists
+  from other programs as M3U and add the files.
 - No web build and no MCP server yet; the command line runs every command of the engine.
 - Known problem: the window may rarely stop at start while drawing (seen once in some forty starts on one
   computer with two graphics cards; egui issues [8450](https://github.com/emilk/egui/issues/8450) and

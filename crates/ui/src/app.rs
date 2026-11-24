@@ -86,6 +86,7 @@ pub enum Action {
     ChooseLibrary,
     ImportPlaylist,
     ImportSongs,
+    ImportLibraryFile,
     ExportPlaylist(String, String),
     Reveal(String),
     Browse(String),
@@ -370,6 +371,14 @@ impl App {
                         && let Err(e) = self.engine.run(Command::SongsImport { path })
                     {
                         self.engine.error("The song list could not be read: {}", &e);
+                    }
+                }
+                Action::ImportLibraryFile => {
+                    let d = rfd::FileDialog::new().add_filter(self.lang.t("Library files"), &["xml"]);
+                    if let Some(path) = d.pick_file()
+                        && let Err(e) = self.engine.run(Command::LibraryFileImport { path })
+                    {
+                        self.engine.error("The library file could not be imported: {}", &e);
                     }
                 }
                 Action::ExportPlaylist(id, name) => {

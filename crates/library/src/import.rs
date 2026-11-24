@@ -42,8 +42,8 @@ pub fn copy_in(music: &Path, files: &[PathBuf], mut progress: impl FnMut(usize))
             report.duplicates += 1;
         } else {
             match copy_one(music, file) {
-                Ok(true) => report.copied += 1,
-                Ok(false) => report.duplicates += 1,
+                Ok((_, true)) => report.copied += 1,
+                Ok((_, false)) => report.duplicates += 1,
                 Err(e) => report.failed.push((file.clone(), e)),
             }
         }
@@ -52,7 +52,9 @@ pub fn copy_in(music: &Path, files: &[PathBuf], mut progress: impl FnMut(usize))
     report
 }
 
-fn copy_one(music: &Path, file: &Path) -> Result<bool, String> {
+/// Copies one file into the music folder, unless the same bytes are already there. Gives back
+/// where it is now and whether it was copied.
+pub fn copy_one(music: &Path, file: &Path) -> Result<(PathBuf, bool), String> {
     let name = file.file_name().and_then(|n| n.to_str()).ok_or("the file name is not valid text")?;
     let info = crate::tags::read(file, name)?;
     let ext = name.rsplit_once('.').map_or("", |(_, e)| e).to_ascii_lowercase();
@@ -63,7 +65,7 @@ fn copy_one(music: &Path, file: &Path) -> Result<bool, String> {
         let target = dir.join(if n == 1 { format!("{base}.{ext}") } else { format!("{base} ({n}).{ext}") });
         if target.exists() {
             if same_bytes(file, &target).unwrap_or(false) {
-                return Ok(false);
+                return Ok((target, false));
             }
             continue;
         }
@@ -75,7 +77,7 @@ fn copy_one(music: &Path, file: &Path) -> Result<bool, String> {
             std::fs::remove_file(&part).ok();
             return Err(e.to_string());
         }
-        return Ok(true);
+        return Ok((target, true));
     }
     Err("too many files with this name".to_owned())
 }

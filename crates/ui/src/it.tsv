@@ -317,3 +317,10 @@ the list has no songs	l'elenco non contiene brani
 {} (opens in its own app)	{} (si apre nella sua app)
 {} song has no file here.	{} brano non ha un file su questo computer.
 {} songs have no file here.	{} brani non hanno un file su questo computer.
+Import Library File…	Importa file della libreria…
+Library files	File della libreria
+Library file imported, songs / playlists: {}	File della libreria importato, brani / playlist: {}
+The library file could not be imported: {}	Il file della libreria non è stato importato: {}
+the library file is too large	il file della libreria è troppo grande
+this is not a music library file: it has no list of songs	questo non è un file di libreria musicale: non contiene un elenco di brani
+the import was stopped	l'importazione è stata interrotta

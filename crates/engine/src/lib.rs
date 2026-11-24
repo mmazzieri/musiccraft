@@ -16,6 +16,7 @@ pub mod art;
 pub mod command;
 pub mod core;
 pub mod demo;
+pub mod library_file;
 pub mod list;
 pub mod matching;
 pub mod pages;

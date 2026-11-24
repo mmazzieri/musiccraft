@@ -12,6 +12,7 @@ description = "MusicCraft's commands, play queue and settings, without an interf
 workspace = true
 
 [dependencies]
+unicode-normalization.workspace = true
 musiccraft-library.workspace = true
 musiccraft-player.workspace = true
 musiccraft-services.workspace = true

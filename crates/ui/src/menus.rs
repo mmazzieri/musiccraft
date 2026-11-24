@@ -47,6 +47,7 @@ impl App {
                     self.pick(ui, self.lang.t("Add a Song Without a File…"), None, Action::Open(Dialog::song()));
                     self.pick(ui, self.lang.t("Import Song List…"), None, Action::ImportSongs);
                     self.pick(ui, self.lang.t("Import Playlist…"), None, Action::ImportPlaylist);
+                    self.pick(ui, self.lang.t("Import Library File…"), None, Action::ImportLibraryFile);
                     ui.separator();
                 });
                 self.pick(ui, self.lang.t("Choose Library Folder…"), None, Action::ChooseLibrary);
