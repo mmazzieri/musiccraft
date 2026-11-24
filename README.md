@@ -51,8 +51,8 @@ app, and it is not affiliated with ArtCraft, Apple or Spotify. Other projects us
 
 ## Install
 
-Each [release](https://github.com/mmazzieri/musiccraft/releases) has these files, with their checksums in
-`SHA256SUMS.txt`:
+**There is no release yet**: build from source, below. Each [release](https://github.com/mmazzieri/musiccraft/releases)
+will have these files, with their checksums in `SHA256SUMS.txt`:
 
 | System | File |
 |---|---|
@@ -62,7 +62,7 @@ Each [release](https://github.com/mmazzieri/musiccraft/releases) has these files
 | Fedora, openSUSE, RHEL | `musiccraft-<version>-linux-<arch>.rpm` |
 | Any Linux with glibc 2.35 or newer | `musiccraft-<version>-linux-<arch>.tar.gz` |
 
-The files are not signed yet. Windows may ask for a confirmation the first time. On macOS open the app once,
+The files will not be signed at first. Windows may ask for a confirmation the first time. On macOS open the app once,
 close the warning, then choose **System Settings › Privacy & Security › Open Anyway**.
 
 ## Build
