@@ -597,6 +597,10 @@ impl Library {
             }
             let Some(data) = self.own.get(i) else { continue };
             let bytes = serde_json::to_vec(data).map_err(|e| LibraryError::Other(e.to_string()))?;
+            // A file this large could not be read again: the one that is there, and its copy, stay.
+            if u64::try_from(bytes.len()).is_ok_and(|n| n > MAX_FILE) {
+                return Err(LibraryError::Other("the catalogue is too large to be saved".to_owned()));
+            }
             let path = self.own_path(section);
             craft_atomic::atomic_write(&path, &bytes).map_err(io(&path))?;
             let backup = self.backup_path(section);
