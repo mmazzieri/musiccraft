@@ -15,14 +15,14 @@ NAMES = ("LICENSE", "LICENCE", "COPYING", "NOTICE", "UNLICENSE")
 
 
 def shipped():
-    """Crates reachable from the app through normal dependencies, on any platform."""
+    """Crates reachable from the app and the command line through normal dependencies, on any platform."""
     out = {}
     for target in TARGETS:
         cmd = ["cargo", "metadata", "--format-version", "1", "--locked", "--filter-platform", target]
         meta = json.loads(subprocess.run(cmd, cwd=ROOT, check=True, capture_output=True).stdout)
         packages = {p["id"]: p for p in meta["packages"]}
         nodes = {n["id"]: n for n in meta["resolve"]["nodes"]}
-        todo = [i for i, p in packages.items() if p["name"] == "musiccraft"]
+        todo = [i for i, p in packages.items() if p["name"] in ("musiccraft", "musiccraft-cli")]
         seen = set()
         while todo:
             i = todo.pop()
