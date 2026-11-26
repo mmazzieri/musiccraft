@@ -57,7 +57,6 @@ done
 install -Dm644 "$HERE/$APP_ID.desktop" "$STAGE/usr/share/applications/$APP_ID.desktop"
 mkdir -p "$STAGE/usr/share/icons"
 cp -R "$ROOT/assets/app-icon/hicolor" "$STAGE/usr/share/icons/"
-install -Dm644 "$ROOT/assets/app-icon/musiccraft.svg" "$STAGE/usr/share/icons/hicolor/scalable/apps/$APP_ID.svg"
 mkdir -p "$STAGE/usr/share/doc/$PKG"
 copy_docs "$STAGE/usr/share/doc/$PKG"
 if command -v desktop-file-validate >/dev/null; then
