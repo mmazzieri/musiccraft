@@ -16,7 +16,7 @@ use std::path::PathBuf;
 /// Fixed install identity; also the Wayland app id.
 const APP_ID: &str = "it.mauromazzieri.musiccraft";
 
-/// Window icon, 64x64 RGBA, drawn by tools/icons.py.
+/// Window icon, 64x64 RGBA, written by tools/icons.py.
 const ICON: &[u8] = include_bytes!("../assets/app-icon/window-64.rgba");
 
 const HELP: &str = "MusicCraft
