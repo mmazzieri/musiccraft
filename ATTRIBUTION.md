@@ -48,6 +48,7 @@ their public web addresses; no interface of theirs is used.
 | keyring | MIT OR Apache-2.0 |
 | image | MIT OR Apache-2.0 |
 | rfd | MIT |
+| winresource (build only, Windows: the icon inside the executable) | MIT |
 | dirs (option-ext: MPL-2.0, unmodified) | MIT OR Apache-2.0 |
 | serde, serde_json, uuid, thiserror, sha2, md-5, base64, url, unicode-normalization, sys-locale, chrono, tempfile | MIT OR Apache-2.0, or Apache-2.0 OR MIT |
 

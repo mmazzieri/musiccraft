@@ -47,6 +47,7 @@ Write-Output "MusicCraft $Version for Windows x64"
 
 if (-not $SkipBuild) {
   $env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS = '-C target-feature=+crt-static'
+  $env:MUSICCRAFT_REQUIRE_WINRES = '1'  # an executable without its icon fails the build
   Invoke-Native 'cargo build' { cargo build --release --locked -p $Pkg -p "$Pkg-cli" --target $Target }
 }
 $Exe = Join-Path $TargetDir "$Target\release\$Pkg.exe"
