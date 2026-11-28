@@ -14,6 +14,10 @@ fn alone() -> MutexGuard<'static, ()> {
 }
 
 fn window(view: &str) -> Harness<'static, App> {
+    window_with(view, false)
+}
+
+fn window_with(view: &str, type_paths: bool) -> Harness<'static, App> {
     let options = Options {
         demo: true,
         // With a picture asked for, the demonstration shows a song without opening a sound device.
@@ -21,6 +25,7 @@ fn window(view: &str) -> Harness<'static, App> {
         view: view.to_owned(),
         language: "en".to_owned(),
         theme: "light".to_owned(),
+        type_paths,
     };
     let mut h = Harness::builder().with_size([1180.0, 760.0]).build_eframe(move |cc| App::new(&cc.egui_ctx, options));
     h.run_steps(4);
@@ -83,4 +88,22 @@ fn the_header_is_named() {
     }
     assert!(h.query_all_by_role(Role::SearchInput).next().is_some());
     assert_eq!(h.query_all_by_role(Role::Tab).count(), 3);
+}
+
+/// Without the system's file chooser, adding files asks for the path in a dialog of the window,
+/// which takes the focus, refuses a path where nothing is, and closes with Esc.
+#[test]
+fn a_path_is_typed_when_there_is_no_file_chooser() {
+    let _one = alone();
+    let mut h = window_with("songs", true);
+    h.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::O);
+    h.run_steps(3);
+    let field = h.get_by_role_and_label(Role::TextInput, "File or folder to add");
+    assert!(field.accesskit_node().is_focused());
+    field.type_text("/no/such/place/for/musiccraft");
+    h.run_steps(3);
+    assert!(h.query_by_label("Nothing is at this path.").is_some());
+    h.key_press(egui::Key::Escape);
+    h.run_steps(3);
+    assert!(h.query_by_label("File or folder to add").is_none());
 }

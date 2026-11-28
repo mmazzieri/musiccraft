@@ -13,6 +13,7 @@
 
 mod albums;
 mod app;
+mod chooser;
 mod dialogs;
 mod fonts;
 mod header;

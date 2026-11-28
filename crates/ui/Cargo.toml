@@ -25,6 +25,9 @@ sys-locale.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
+[target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "dragonfly", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
+zbus.workspace = true
+
 [dev-dependencies]
 tempfile.workspace = true
 egui_kittest.workspace = true
