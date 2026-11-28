@@ -131,6 +131,8 @@ pub struct App {
     shot_asked: bool,
     pub demo: bool,
     announced: String,
+    /// A warning a dialog shows beside the focused field, spoken in this frame.
+    pub(crate) warning: Option<String>,
 }
 
 /// Where the demonstration library is kept.
@@ -219,6 +221,7 @@ impl App {
             shot_asked: false,
             demo,
             announced: String::new(),
+            warning: None,
         }
     }
 
@@ -570,7 +573,9 @@ impl eframe::App for App {
         }
         dialogs::show(self, &ctx);
         let now = self.engine.now();
+        let warning = self.warning.take();
         let spoken = match (now.status, self.engine.notices.last()) {
+            _ if warning.is_some() => warning.unwrap_or_default(),
             (_, Some(n)) => self.lang.f(&n.text, self.lang.t(&n.detail)),
             (NowStatus::Playing, _) => self.lang.f2("Playing: {}, {}", &now.meta.title, &now.meta.artist),
             (NowStatus::Elsewhere, _) => self.lang.f("Opened in {}", &now.via),

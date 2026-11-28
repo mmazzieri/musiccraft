@@ -426,10 +426,17 @@ fn type_path(app: &mut App, ui: &mut Ui, want: &Want, path: &mut String, missing
     let typed = chooser::typed(path, chooser::home()).map(|p| std::path::absolute(&p).unwrap_or(p));
     let absent = typed.as_deref().is_some_and(|p| must_exist && !p.exists());
     let replaces = matches!(want, Want::SavePlaylist { .. }) && typed.as_deref().is_some_and(Path::exists);
-    if absent {
-        ui.label(egui::RichText::new(app.lang.t("Nothing is at this path.")).color(t.error));
+    // A warning beside the focused field is also spoken, without taking the focus from it.
+    let warning = if absent {
+        Some(l.t("Nothing is at this path."))
     } else if replaces {
-        ui.label(egui::RichText::new(app.lang.t("A file is already there: saving replaces it.")).color(t.error));
+        Some(l.t("A file is already there: saving replaces it."))
+    } else {
+        None
+    };
+    if let Some(w) = warning {
+        ui.label(egui::RichText::new(w).color(t.error));
+        app.warning = Some(w.to_owned());
     } else {
         ui.label(egui::RichText::new(app.lang.t("~ stands for your home folder.")).color(t.weak));
     }

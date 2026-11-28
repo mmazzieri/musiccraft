@@ -91,7 +91,7 @@ fn the_header_is_named() {
 }
 
 /// Without the system's file chooser, adding files asks for the path in a dialog of the window,
-/// which takes the focus, refuses a path where nothing is, and closes with Esc.
+/// which takes the focus, refuses a path where nothing is (and says so aloud), and closes with Esc.
 #[test]
 fn a_path_is_typed_when_there_is_no_file_chooser() {
     let _one = alone();
@@ -102,7 +102,13 @@ fn a_path_is_typed_when_there_is_no_file_chooser() {
     assert!(field.accesskit_node().is_focused());
     field.type_text("/no/such/place/for/musiccraft");
     h.run_steps(3);
-    assert!(h.query_by_label("Nothing is at this path.").is_some());
+    // Shown beside the field, and spoken by the live region while the focus stays in the field.
+    assert!(h.query_all_by_label("Nothing is at this path.").count() >= 2);
+    assert!(
+        h.query_all_by_role(Role::Status)
+            .any(|n| n.accesskit_node().label().as_deref() == Some("Nothing is at this path."))
+    );
+    assert!(h.get_by_role_and_label(Role::TextInput, "File or folder to add").accesskit_node().is_focused());
     h.key_press(egui::Key::Escape);
     h.run_steps(3);
     assert!(h.query_by_label("File or folder to add").is_none());
