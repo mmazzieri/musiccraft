@@ -14,7 +14,7 @@ use musiccraft_library::import::Report;
 use musiccraft_library::model::{Info, Link, Presence};
 use musiccraft_library::query::{self, Search};
 use musiccraft_library::scan::{self, Cache, Progress, ScanResult};
-use musiccraft_library::{Item, Library, Meta, Source, Track, m3u, now_ms};
+use musiccraft_library::{Item, Library, Meta, Source, Track, m3u, now_ms, tags};
 use musiccraft_player::{Input, Player, Status};
 use musiccraft_services::soloist::{self, Soloist};
 use musiccraft_services::spotify::{self, Hosts, Spotify};
@@ -227,6 +227,7 @@ impl Engine {
         let (tx, rx) = channel();
         let player = Player::new();
         player.set_volume(f32::from(settings.volume.min(100)) / 100.0);
+        player.set_even(settings.even_volume);
         let mut e = Engine {
             dir: dir.to_owned(),
             queue: Queue::new(settings.shuffle, settings.repeat),
@@ -452,7 +453,7 @@ impl Engine {
                 self.resolving = 0;
                 match url {
                     Ok(url) => {
-                        let n = self.player.load(Input::Url { url, live: true }, Duration::ZERO, false);
+                        let n = self.player.load(Input::Url { url, live: true }, None, Duration::ZERO, false);
                         if let Some(p) = &mut self.playing {
                             p.number = n;
                         }
@@ -1009,7 +1010,7 @@ impl Engine {
         }
         match self.input(&item) {
             Ok(input) => {
-                let n = self.player.load(input, Duration::ZERO, false);
+                let n = self.player.load(input, Some(tags::leveling), Duration::ZERO, false);
                 if let Some(p) = &mut self.playing {
                     p.number = n;
                 }
@@ -1201,7 +1202,7 @@ impl Engine {
             return;
         }
         if let Ok(input) = self.input(&play) {
-            let n = self.player.preload(input);
+            let n = self.player.preload(input, Some(tags::leveling));
             self.preloaded = Some((n, item, play));
         }
     }
@@ -1344,6 +1345,10 @@ impl Engine {
             Command::Shuffle { on } => {
                 self.queue.set_shuffle(on);
                 self.change_settings(|s| s.shuffle = on);
+            }
+            Command::EvenVolume { on } => {
+                self.player.set_even(on);
+                self.change_settings(|s| s.even_volume = on);
             }
             Command::Repeat { mode } => {
                 self.queue.repeat = mode;

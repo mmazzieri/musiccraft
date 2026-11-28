@@ -118,6 +118,10 @@ impl App {
                 if ui.checkbox(&mut on, self.lang.t("Shuffle")).clicked() {
                     self.cmd(Command::Shuffle { on });
                 }
+                let mut even = self.engine.settings.even_volume;
+                if ui.checkbox(&mut even, self.lang.t("Even Volume")).clicked() {
+                    self.cmd(Command::EvenVolume { on: even });
+                }
                 let mode = next_repeat(self.engine.queue.repeat);
                 self.pick(ui, self.lang.t("Change Repeat"), None, Action::Run(Command::Repeat { mode }));
             });

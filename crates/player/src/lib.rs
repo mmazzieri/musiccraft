@@ -14,11 +14,14 @@
 )]
 
 mod health;
+mod level;
 pub mod stream;
 
+pub use level::Reader;
 use rodio::decoder::DecoderBuilder;
 use rodio::source::Source;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -60,8 +63,8 @@ pub struct State {
 }
 
 enum Cmd {
-    Load { input: Input, number: u64, start: Duration, paused: bool },
-    Preload { input: Input, number: u64 },
+    Load { input: Input, level: Option<Reader>, number: u64, start: Duration, paused: bool },
+    Preload { input: Input, level: Option<Reader>, number: u64 },
     Opened { number: u64, cancel: stream::Cancel, result: Result<Opened, String> },
     Play,
     Pause,
@@ -75,6 +78,8 @@ pub struct Player {
     tx: Sender<Cmd>,
     state: Arc<Mutex<State>>,
     number: u64,
+    /// Even volume, shared with every song opened.
+    even: Arc<AtomicBool>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -91,15 +96,17 @@ impl Player {
     pub fn new() -> Player {
         let (tx, rx) = channel();
         let state = Arc::new(Mutex::new(State::default()));
-        let (thread_state, own) = (state.clone(), tx.clone());
-        let spawned =
-            std::thread::Builder::new().name("audio".to_owned()).spawn(move || Thread::new(thread_state, own).run(&rx));
+        let even = Arc::new(AtomicBool::new(false));
+        let (thread_state, own, thread_even) = (state.clone(), tx.clone(), even.clone());
+        let spawned = std::thread::Builder::new()
+            .name("audio".to_owned())
+            .spawn(move || Thread::new(thread_state, own, thread_even).run(&rx));
         if let Err(e) = spawned {
             let mut s = lock(&state);
             s.status = Status::Failed;
             s.error = e.to_string();
         }
-        Player { tx, state, number: 0 }
+        Player { tx, state, number: 0, even }
     }
 
     fn send(&self, cmd: Cmd) {
@@ -108,21 +115,23 @@ impl Player {
     }
 
     /// Plays `input` from `start`, instead of what is playing. Returns the song's number.
-    pub fn load(&mut self, input: Input, start: Duration, paused: bool) -> u64 {
+    ///
+    /// `level` reads a file's factor for even volume, on the thread that opens it.
+    pub fn load(&mut self, input: Input, level: Option<Reader>, start: Duration, paused: bool) -> u64 {
         self.number += 1;
         let number = self.number;
         {
             let mut s = lock(&self.state);
             *s = State { status: Status::Loading, current: number, position: start, ..State::default() };
         }
-        self.send(Cmd::Load { input, number, start, paused });
+        self.send(Cmd::Load { input, level, number, start, paused });
         number
     }
 
     /// Gets the next song ready, to follow the current one without a gap.
-    pub fn preload(&mut self, input: Input) -> u64 {
+    pub fn preload(&mut self, input: Input, level: Option<Reader>) -> u64 {
         self.number += 1;
-        self.send(Cmd::Preload { input, number: self.number });
+        self.send(Cmd::Preload { input, level, number: self.number });
         self.number
     }
 
@@ -136,6 +145,11 @@ impl Player {
 
     pub fn seek(&self, to: Duration) {
         self.send(Cmd::Seek(to));
+    }
+
+    /// Turns even volume on or off, at once for the song playing and the one prepared to follow.
+    pub fn set_even(&self, on: bool) {
+        self.even.store(on, Ordering::Relaxed);
     }
 
     /// 0 to 1.
@@ -157,6 +171,17 @@ type Boxed = Box<dyn Source + Send>;
 struct Opened {
     source: Boxed,
     title: Arc<Mutex<String>>,
+}
+
+impl Opened {
+    /// A file, made louder or softer by its tags while even volume is on; a stream as it comes.
+    fn leveled(self, input: &Input, level: Option<Reader>, even: Arc<AtomicBool>) -> Opened {
+        let gain = match (input, level) {
+            (Input::File(path), Some(read)) => read(path).unwrap_or(1.0),
+            _ => return self,
+        };
+        Opened { source: Box::new(level::Leveled::new(self.source, gain, even)), title: self.title }
+    }
 }
 
 /// A song being opened on a thread of its own, because a slow station can take long to answer.
@@ -182,11 +207,13 @@ struct Thread {
     next: Option<(u64, Arc<Mutex<String>>, stream::Cancel)>,
     title: Arc<Mutex<String>>,
     cancel: stream::Cancel,
+    even: Arc<AtomicBool>,
 }
 
 impl Thread {
-    fn new(state: Arc<Mutex<State>>, tx: Sender<Cmd>) -> Thread {
+    fn new(state: Arc<Mutex<State>>, tx: Sender<Cmd>, even: Arc<AtomicBool>) -> Thread {
         Thread {
+            even,
             state,
             tx,
             opening: None,
@@ -240,16 +267,24 @@ impl Thread {
 
     fn handle(&mut self, cmd: Cmd) {
         match cmd {
-            Cmd::Load { input, number, start, paused } => {
+            Cmd::Load { input, level, number, start, paused } => {
                 self.drop_player();
                 self.current = number;
-                self.begin(input, Opening { number, cancel: stream::Cancel::default(), start, paused, next: false });
+                self.begin(
+                    input,
+                    level,
+                    Opening { number, cancel: stream::Cancel::default(), start, paused, next: false },
+                );
             }
-            Cmd::Preload { input, number } => {
+            Cmd::Preload { input, level, number } => {
                 let idle = self.player.as_ref().is_none_or(rodio::Player::empty);
                 if self.next.is_none() && self.opening.is_none() && !idle {
                     let cancel = stream::Cancel::default();
-                    self.begin(input, Opening { number, cancel, start: Duration::ZERO, paused: false, next: true });
+                    self.begin(
+                        input,
+                        level,
+                        Opening { number, cancel, start: Duration::ZERO, paused: false, next: true },
+                    );
                 }
             }
             Cmd::Opened { number, cancel, result } => {
@@ -309,11 +344,11 @@ impl Thread {
     }
 
     /// Opens a song on another thread, which answers with `Opened`.
-    fn begin(&mut self, input: Input, o: Opening) {
-        let (tx, cancel, number) = (self.tx.clone(), o.cancel.clone(), o.number);
+    fn begin(&mut self, input: Input, level: Option<Reader>, o: Opening) {
+        let (tx, cancel, number, even) = (self.tx.clone(), o.cancel.clone(), o.number, self.even.clone());
         self.opening = Some(o);
         let spawned = std::thread::Builder::new().name("open".to_owned()).spawn(move || {
-            let result = open(&input, &cancel);
+            let result = open(&input, &cancel).map(|o| o.leveled(&input, level, even));
             // The audio thread ends only with the program.
             tx.send(Cmd::Opened { number, cancel, result }).ok();
         });
