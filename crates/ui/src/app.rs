@@ -1,5 +1,6 @@
 //! The window: what it remembers, and one frame of it.
 
+use crate::chooser::{self, Want};
 use crate::dialogs::{self, Dialog};
 use crate::fonts::Fonts;
 use crate::i18n::Lang;
@@ -31,6 +32,8 @@ pub struct Options {
     pub theme: String,
     /// Language code, instead of the setting.
     pub language: String,
+    /// Ask for paths in the window instead of showing the system's file chooser.
+    pub type_paths: bool,
 }
 
 /// What the main area shows.
@@ -128,6 +131,8 @@ pub struct App {
     shot_asked: bool,
     pub demo: bool,
     announced: String,
+    /// A warning a dialog shows beside the focused field, spoken in this frame.
+    pub(crate) warning: Option<String>,
 }
 
 /// Where the demonstration library is kept.
@@ -216,6 +221,7 @@ impl App {
             shot_asked: false,
             demo,
             announced: String::new(),
+            warning: None,
         }
     }
 
@@ -327,79 +333,13 @@ impl App {
                     self.open_album = None;
                 }
                 Action::Open(d) => self.dialog = Some(d),
-                Action::AddFiles => {
-                    let exts = musiccraft_library::AUDIO_EXTENSIONS;
-                    let picked = rfd::FileDialog::new().add_filter(self.lang.t("Music"), exts).pick_files();
-                    self.add(picked.unwrap_or_default());
-                }
-                Action::AddFolder => {
-                    let picked = rfd::FileDialog::new().pick_folder();
-                    self.add(picked.into_iter().collect());
-                }
-                Action::ChooseLibrary => {
-                    let mut d = rfd::FileDialog::new();
-                    if let Some(parent) = default_folder().as_deref().and_then(Path::parent) {
-                        d = d.set_directory(parent);
-                    }
-                    if let Some(path) = d.pick_folder() {
-                        self.open_library(path);
-                    }
-                }
-                Action::ImportPlaylist => {
-                    let d = rfd::FileDialog::new().add_filter(self.lang.t("Playlists"), &["m3u", "m3u8", "pls"]);
-                    if let Some(path) = d.pick_file() {
-                        match self.engine.run(Command::PlaylistImport { path }) {
-                            Ok(v) => {
-                                if let Some(id) = v.get("id").and_then(serde_json::Value::as_str) {
-                                    self.view = View::Playlist(id.to_owned());
-                                }
-                                let n = |k: &str| v.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
-                                if n("missing") > 0 {
-                                    self.engine.error(
-                                        "Songs of the playlist not in the library: {}",
-                                        &n("missing").to_string(),
-                                    );
-                                }
-                            }
-                            Err(e) => self.engine.error("The playlist could not be read: {}", &e),
-                        }
-                    }
-                }
-                Action::ImportLibrary => {
-                    let d = rfd::FileDialog::new().add_filter(self.lang.t("Exported library (XML)"), &["xml"]);
-                    if let Some(path) = d.pick_file()
-                        && let Err(e) = self.engine.run(Command::ExportedRead { path })
-                    {
-                        self.engine.error("The library file could not be read: {}", &e);
-                    }
-                }
-                Action::ImportSongs => {
-                    let d = rfd::FileDialog::new().add_filter(self.lang.t("Song lists"), &["csv", "tsv", "txt"]);
-                    if let Some(path) = d.pick_file()
-                        && let Err(e) = self.engine.run(Command::SongsImport { path })
-                    {
-                        self.engine.error("The song list could not be read: {}", &e);
-                    }
-                }
-                Action::ExportPlaylist(id, name) => {
-                    let d = rfd::FileDialog::new()
-                        .add_filter(self.lang.t("Playlists"), &["m3u8"])
-                        .set_file_name(format!("{}.m3u8", musiccraft_library::import::safe(&name, "Playlist")));
-                    if let Some(path) = d.save_file() {
-                        match self.engine.run(Command::PlaylistExport { id, path }) {
-                            Ok(v) => {
-                                let left = v.get("left_out").and_then(serde_json::Value::as_u64).unwrap_or(0);
-                                if left > 0 {
-                                    self.engine.error(
-                                        "Songs left out because they play from a service: {}",
-                                        &left.to_string(),
-                                    );
-                                }
-                            }
-                            Err(e) => self.engine.error("The playlist could not be written: {}", &e),
-                        }
-                    }
-                }
+                Action::AddFiles => self.choose(Want::Add),
+                Action::AddFolder => self.choose(Want::AddFolder),
+                Action::ChooseLibrary => self.choose(Want::Library),
+                Action::ImportPlaylist => self.choose(Want::Playlist),
+                Action::ImportLibrary => self.choose(Want::LibraryFile),
+                Action::ImportSongs => self.choose(Want::SongList),
+                Action::ExportPlaylist(id, name) => self.choose(Want::SavePlaylist { id, name }),
                 Action::Reveal(id) => {
                     if let Some(dir) =
                         self.engine.library().and_then(|l| l.file(&id)).and_then(|f| f.parent().map(Path::to_owned))
@@ -429,6 +369,95 @@ impl App {
                 }
                 Action::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             }
+        }
+    }
+
+    /// Shows the system's file chooser, or, where there is none, a dialog that asks for the path.
+    fn choose(&mut self, want: Want) {
+        // Asked for in the window, the system is not probed at all.
+        if self.options.type_paths {
+            self.dialog = Some(Dialog::type_path(want, false));
+            return;
+        }
+        if !chooser::available() {
+            self.dialog = Some(Dialog::type_path(want, true));
+            return;
+        }
+        let d = rfd::FileDialog::new();
+        let picked: Vec<PathBuf> = match &want {
+            Want::Add => {
+                let d = d.add_filter(self.lang.t("Music"), musiccraft_library::AUDIO_EXTENSIONS);
+                d.pick_files().unwrap_or_default()
+            }
+            Want::AddFolder => d.pick_folder().into_iter().collect(),
+            Want::Library => {
+                let mut d = d;
+                if let Some(parent) = default_folder().as_deref().and_then(Path::parent) {
+                    d = d.set_directory(parent);
+                }
+                d.pick_folder().into_iter().collect()
+            }
+            Want::Playlist => {
+                d.add_filter(self.lang.t("Playlists"), &["m3u", "m3u8", "pls"]).pick_file().into_iter().collect()
+            }
+            Want::LibraryFile => {
+                d.add_filter(self.lang.t("Exported library (XML)"), &["xml"]).pick_file().into_iter().collect()
+            }
+            Want::SongList => {
+                let d = d.add_filter(self.lang.t("Song lists"), &["csv", "tsv", "txt"]);
+                d.pick_file().into_iter().collect()
+            }
+            Want::SavePlaylist { name, .. } => d
+                .add_filter(self.lang.t("Playlists"), &["m3u8"])
+                .set_file_name(playlist_file(name))
+                .save_file()
+                .into_iter()
+                .collect(),
+        };
+        self.chosen(want, picked);
+    }
+
+    /// Does what the paths were chosen for. None chosen is a cancel.
+    pub(crate) fn chosen(&mut self, want: Want, paths: Vec<PathBuf>) {
+        if matches!(want, Want::Add | Want::AddFolder) {
+            self.add(paths);
+            return;
+        }
+        let Some(path) = paths.into_iter().next() else { return };
+        match want {
+            Want::Add | Want::AddFolder => {}
+            Want::Library => self.open_library(path),
+            Want::Playlist => match self.engine.run(Command::PlaylistImport { path }) {
+                Ok(v) => {
+                    if let Some(id) = v.get("id").and_then(serde_json::Value::as_str) {
+                        self.view = View::Playlist(id.to_owned());
+                    }
+                    let n = |k: &str| v.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
+                    if n("missing") > 0 {
+                        self.engine.error("Songs of the playlist not in the library: {}", &n("missing").to_string());
+                    }
+                }
+                Err(e) => self.engine.error("The playlist could not be read: {}", &e),
+            },
+            Want::LibraryFile => {
+                if let Err(e) = self.engine.run(Command::ExportedRead { path }) {
+                    self.engine.error("The library file could not be read: {}", &e);
+                }
+            }
+            Want::SongList => {
+                if let Err(e) = self.engine.run(Command::SongsImport { path }) {
+                    self.engine.error("The song list could not be read: {}", &e);
+                }
+            }
+            Want::SavePlaylist { id, .. } => match self.engine.run(Command::PlaylistExport { id, path }) {
+                Ok(v) => {
+                    let left = v.get("left_out").and_then(serde_json::Value::as_u64).unwrap_or(0);
+                    if left > 0 {
+                        self.engine.error("Songs left out because they play from a service: {}", &left.to_string());
+                    }
+                }
+                Err(e) => self.engine.error("The playlist could not be written: {}", &e),
+            },
         }
     }
 
@@ -544,7 +573,9 @@ impl eframe::App for App {
         }
         dialogs::show(self, &ctx);
         let now = self.engine.now();
+        let warning = self.warning.take();
         let spoken = match (now.status, self.engine.notices.last()) {
+            _ if warning.is_some() => warning.unwrap_or_default(),
             (_, Some(n)) => self.lang.f(&n.text, self.lang.t(&n.detail)),
             (NowStatus::Playing, _) => self.lang.f2("Playing: {}, {}", &now.meta.title, &now.meta.artist),
             (NowStatus::Elsewhere, _) => self.lang.f("Opened in {}", &now.via),
@@ -586,6 +617,11 @@ fn save_png(path: &Path, image: &egui::ColorImage) -> Result<(), String> {
         std::fs::create_dir_all(dir).ok();
     }
     image::save_buffer(path, &rgba, w, h, image::ColorType::Rgba8).map_err(|e| e.to_string())
+}
+
+/// The file name offered for a playlist that is saved.
+pub(crate) fn playlist_file(name: &str) -> String {
+    format!("{}.m3u8", musiccraft_library::import::safe(name, "Playlist"))
 }
 
 /// Opens a folder in the system's file manager.

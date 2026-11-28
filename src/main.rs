@@ -23,6 +23,7 @@ const HELP: &str = "MusicCraft
 
   musiccraft                        open the window
   musiccraft --demo                 open it with a demonstration library
+  musiccraft --type-paths           ask for paths in the window, not in the system's file chooser
   musiccraft --screenshot FILE.png  save a picture of the window and end
       --view NAME     albums, album, artists, songs, genres, radio, services or welcome
       --theme NAME    light or dark
@@ -36,6 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut value = || args.next().ok_or(format!("{a} needs a value"));
         match a.as_str() {
             "--demo" => options.demo = true,
+            "--type-paths" => options.type_paths = true,
             "--screenshot" => options.screenshot = Some(PathBuf::from(value()?)),
             "--view" => options.view = value()?,
             "--theme" => options.theme = value()?,

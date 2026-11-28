@@ -1,6 +1,7 @@
 //! Dialogs. Each takes the focus, closes with Esc, and leaves the rest of the window alone.
 
-use crate::app::{Action, App, set_theme};
+use crate::app::{Action, App, playlist_file, set_theme};
+use crate::chooser::{self, Want};
 use crate::i18n::{LANGUAGES, Lang, time};
 use crate::theme::tokens;
 use egui::{Key, Ui};
@@ -8,10 +9,11 @@ use musiccraft_engine::command::TagEdit;
 use musiccraft_engine::core::Incoming;
 use musiccraft_engine::pages::{Page, PageState};
 use musiccraft_engine::{Command, Service, Theme};
-use musiccraft_library::Item;
 use musiccraft_library::model::Info;
 use musiccraft_library::query::Sort;
 use musiccraft_library::smart::{FIELDS, Field, Op, Rule, Rules};
+use musiccraft_library::{Item, default_folder};
+use std::path::Path;
 
 /// A text of the tag editor: its first value and the one typed.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -35,6 +37,7 @@ pub enum Dialog {
     Incoming { incoming: Incoming, copy: bool },
     Song { title: String, artist: String, album: String },
     Link { id: String, service: Service, song: Box<Info>, query: String, asked: String, page: String },
+    TypePath { want: Want, path: String, missing: bool },
     Settings,
     About,
 }
@@ -92,6 +95,17 @@ impl Dialog {
 
     pub fn settings() -> Dialog {
         Dialog::Settings
+    }
+
+    /// Asks for the path the system's file chooser would have given; `missing` says the system
+    /// has none.
+    pub fn type_path(want: Want, missing: bool) -> Dialog {
+        let path = match &want {
+            Want::Library => default_folder(),
+            Want::SavePlaylist { name, .. } => chooser::home().map(|h| h.join(playlist_file(name))),
+            _ => None,
+        };
+        Dialog::TypePath { want, path: path.map(|p| p.display().to_string()).unwrap_or_default(), missing }
     }
 }
 
@@ -369,6 +383,7 @@ fn body(app: &mut App, ui: &mut Ui, dialog: &mut Dialog) -> bool {
             link(app, ui, (id, service, song), (query, asked), page)
         }
         Dialog::Settings => settings(app, ui),
+        Dialog::TypePath { want, path, missing } => type_path(app, ui, want, path, *missing),
         Dialog::About => {
             ui.heading("MusicCraft");
             ui.label(app.lang.f("Version {}", env!("CARGO_PKG_VERSION")));
@@ -384,6 +399,53 @@ fn body(app: &mut App, ui: &mut Ui, dialog: &mut Dialog) -> bool {
             !ui.button(app.lang.t("Close")).clicked()
         }
     }
+}
+
+/// Takes a typed path, for what the file chooser would have been opened for.
+fn type_path(app: &mut App, ui: &mut Ui, want: &Want, path: &mut String, missing: bool) -> bool {
+    let t = tokens(ui);
+    ui.heading(app.lang.t("Type the Path"));
+    if missing {
+        ui.label(app.lang.t(
+            "This system has no window for choosing files. Install the desktop portal with a file chooser (for example xdg-desktop-portal-gtk) or zenity to have one; meanwhile, type the path here.",
+        ));
+    }
+    let l = app.lang.clone();
+    let (label, yes, must_exist) = match want {
+        Want::Add => (l.t("File or folder to add"), l.t("Add"), true),
+        Want::AddFolder => (l.t("Folder to add"), l.t("Add"), true),
+        Want::Library => (l.t("Folder of the library"), l.t("Open"), false),
+        Want::Playlist => (l.t("Playlist file (M3U or PLS)"), l.t("Open"), true),
+        Want::LibraryFile => (l.t("Library file (XML)"), l.t("Open"), true),
+        Want::SongList => (l.t("List of songs (CSV, TSV or text)"), l.t("Open"), true),
+        Want::SavePlaylist { .. } => (l.t("File to save the playlist in"), l.t("Save"), false),
+    };
+    field(ui, label, path, true, false);
+    // A relative path is taken from where MusicCraft was started, and kept whole, so that the
+    // library is the same folder the next time, wherever it is started from.
+    let typed = chooser::typed(path, chooser::home()).map(|p| std::path::absolute(&p).unwrap_or(p));
+    let absent = typed.as_deref().is_some_and(|p| must_exist && !p.exists());
+    let replaces = matches!(want, Want::SavePlaylist { .. }) && typed.as_deref().is_some_and(Path::exists);
+    // A warning beside the focused field is also spoken, without taking the focus from it.
+    let warning = if absent {
+        Some(l.t("Nothing is at this path."))
+    } else if replaces {
+        Some(l.t("A file is already there: saving replaces it."))
+    } else {
+        None
+    };
+    if let Some(w) = warning {
+        ui.label(egui::RichText::new(w).color(t.error));
+        app.warning = Some(w.to_owned());
+    } else {
+        ui.label(egui::RichText::new(app.lang.t("~ stands for your home folder.")).color(t.weak));
+    }
+    let yes = if replaces { l.t("Replace") } else { yes };
+    let (yes, no) = buttons(app, ui, yes, typed.is_some() && !absent);
+    if yes && let Some(p) = typed {
+        app.chosen(want.clone(), vec![p]);
+    }
+    !(yes || no)
 }
 
 /// Chooses by hand what a song is on a service: from a search, or by its page.

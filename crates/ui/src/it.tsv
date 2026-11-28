@@ -2,6 +2,7 @@
 1. At developer.spotify.com create an app of your own (it is free).	1. Su developer.spotify.com crea una tua app (è gratuito).
 2. As its redirect address enter	2. Come indirizzo di reindirizzamento inserisci
 3. Paste its Client ID here and sign in.	3. Incolla qui il suo Client ID e accedi.
+A file is already there: saving replaces it.	C'è già un file: salvando lo sostituisci.
 A music library and player for your files, servers, radio and subscriptions.	Libreria e lettore musicale per i tuoi file, server, radio e abbonamenti.
 About MusicCraft	Informazioni su MusicCraft
 Account	Account
@@ -66,9 +67,13 @@ Exit	Esci
 Experimental, and needs Premium. MusicCraft shows your library and tells a Spotify player what to play: the Spotify app on any device, or Spotify Soloist on this computer.	Sperimentale, e richiede Premium. MusicCraft mostra la tua libreria e dice a un lettore Spotify che cosa riprodurre: l'app Spotify su qualsiasi dispositivo, oppure Spotify Soloist su questo computer.
 Export…	Esporta…
 File	File
+File or folder to add	File o cartella da aggiungere
+File to save the playlist in	File in cui salvare la playlist
 Find	Trova
 Find Stations	Trova stazioni
 Find stations in the directory and keep the ones you like.	Trova le stazioni nell'elenco e conserva quelle che preferisci.
+Folder of the library	Cartella della libreria
+Folder to add	Cartella da aggiungere
 From Radio Browser, a community directory. Type above and press Enter. Double-click plays.	Da Radio Browser, un elenco della comunità. Scrivi in alto e premi Invio. Il doppio clic riproduce.
 Full window	Finestra completa
 Genre	Genere
@@ -80,8 +85,10 @@ Language	Lingua
 Last played	Ultimo ascolto
 Later	Dopo
 Library	Libreria
+Library file (XML)	File della libreria (XML)
 Library folder	Cartella della libreria
 Light	Chiaro
+List of songs (CSV, TSV or text)	Elenco di brani (CSV, TSV o testo)
 Live radio	Radio in diretta
 Loading…	Caricamento…
 Look Again	Cerca di nuovo
@@ -111,6 +118,7 @@ No playlists yet	Ancora nessuna playlist
 No rating	Nessun voto
 No song matches the rules.	Nessun brano corrisponde alle regole.
 Nothing found	Nessun risultato
+Nothing is at this path.	A questo percorso non c'è niente.
 Nothing is waiting. Right-click a song to add it.	Nessun brano in attesa. Fai clic destro su un brano per aggiungerlo.
 Open	Apri
 Open the Page	Apri la pagina
@@ -130,6 +138,7 @@ Play {}	Riproduci {}
 Played, days ago	Ascoltato, giorni fa
 Playing: {}, {}	In riproduzione: {}, {}
 Playlist	Playlist
+Playlist file (M3U or PLS)	File della playlist (M3U o PLS)
 Playlists	Playlist
 Plays	Ascolti
 Position in the song	Posizione nel brano
@@ -156,6 +165,7 @@ Rename…	Rinomina…
 Repeat: all	Ripeti: tutto
 Repeat: off	Ripeti: no
 Repeat: one song	Ripeti: un brano
+Replace	Sostituisci
 Results for “{}”	Risultati per «{}»
 Right-click songs and choose Add to Playlist.	Fai clic destro sui brani e scegli Aggiungi a playlist.
 Save	Salva
@@ -214,11 +224,13 @@ The song cannot be played: {}	Il brano non può essere riprodotto: {}
 The songs stay in the library. The playlist goes from every computer that shares it.	I brani restano nella libreria. La playlist sparisce da tutti i computer che la condividono.
 The station cannot be played: {}	La stazione non può essere riprodotta: {}
 The tags are written into the files.	Le informazioni vengono scritte nei file.
+This system has no window for choosing files. Install the desktop portal with a file chooser (for example xdg-desktop-portal-gtk) or zenity to have one; meanwhile, type the path here.	Questo sistema non ha una finestra per scegliere i file. Per averla installa il portale del desktop con la scelta dei file (per esempio xdg-desktop-portal-gtk) oppure zenity; intanto scrivi qui il percorso.
 Time	Durata
 Title	Titolo
 To share it, put the folder in OneDrive, Google Drive or a similar service and choose it on each computer. Songs that are only in the cloud are listed, and downloaded when played.	Per condividerla, metti la cartella in OneDrive, Google Drive o un servizio simile e sceglila su ogni computer. I brani che sono solo nel cloud vengono elencati e scaricati quando li riproduci.
 Track number	Numero di traccia
 Try Again	Riprova
+Type the Path	Scrivi il percorso
 Unknown	Sconosciuto
 Unknown Album	Album sconosciuto
 Unknown Artist	Artista sconosciuto
@@ -339,3 +351,4 @@ this is not an exported library	questa non è una libreria esportata
 the exported library has no songs	la libreria esportata non contiene brani
 the exported library is too large	la libreria esportata è troppo grande
 the catalogue is too large to be saved	il catalogo è troppo grande per essere salvato
+~ stands for your home folder.	~ sta per la tua cartella personale.

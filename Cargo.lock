@@ -2454,6 +2454,7 @@ dependencies = [
  "serde_json",
  "sys-locale",
  "tempfile",
+ "zbus",
 ]
 
 [[package]]
