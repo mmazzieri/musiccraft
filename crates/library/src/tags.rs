@@ -73,11 +73,7 @@ pub fn from_path(rel: &str) -> Info {
 /// Writes the person's edits into the file's own tags.
 pub fn write(file: &Path, info: &Info) -> Result<(), String> {
     let mut tagged = lofty::read_from_path(file).map_err(|e| e.to_string())?;
-    let kind = tagged.primary_tag_type();
-    if tagged.primary_tag().is_none() {
-        tagged.insert_tag(Tag::new(kind));
-    }
-    let tag = tagged.primary_tag_mut().ok_or("this kind of file has no tags")?;
+    let tag = main_tag(&mut tagged)?;
     tag.set_title(info.title.clone());
     tag.set_artist(info.artist.clone());
     tag.set_album(info.album.clone());
@@ -134,22 +130,8 @@ pub fn write_lyrics(file: &Path, text: &str) -> Result<(), String> {
     let text: String = text.chars().filter(|c| *c != '\0').collect();
     let text = text.trim_end();
     let mut tagged = lofty::read_from_path(file).map_err(|e| e.to_string())?;
-    let kind = tagged.primary_tag_type();
     let keys = [ItemKey::Lyrics, ItemKey::UnsyncLyrics];
-    if tagged.primary_tag().is_none() {
-        // A new tag of the main kind is read first: it starts with what the file's other tag says.
-        let mut fresh = Tag::new(kind);
-        if let Some(other) = tagged.first_tag() {
-            for item in other.items() {
-                fresh.insert(item.clone());
-            }
-            for picture in other.pictures() {
-                fresh.push_picture(picture.clone());
-            }
-        }
-        tagged.insert_tag(fresh);
-    }
-    let tag = tagged.primary_tag_mut().ok_or("this kind of file has no tags")?;
+    let tag = main_tag(&mut tagged)?;
     for k in keys {
         tag.remove_key(k);
     }
@@ -161,6 +143,24 @@ pub fn write_lyrics(file: &Path, text: &str) -> Result<(), String> {
         return Err("this kind of file cannot hold lyrics".to_owned());
     }
     tag.save_to_path(file, WriteOptions::default()).map_err(|e| e.to_string())
+}
+
+/// The tag of the file's main kind, made when missing from what the file's other tag says, so
+/// that an edit keeps the fields and lyrics written there.
+fn main_tag(tagged: &mut lofty::file::TaggedFile) -> Result<&mut Tag, String> {
+    if tagged.primary_tag().is_none() {
+        let mut fresh = Tag::new(tagged.primary_tag_type());
+        if let Some(other) = tagged.first_tag() {
+            for item in other.items() {
+                fresh.insert(item.clone());
+            }
+            for picture in other.pictures() {
+                fresh.push_picture(picture.clone());
+            }
+        }
+        tagged.insert_tag(fresh);
+    }
+    tagged.primary_tag_mut().ok_or_else(|| "this kind of file has no tags".to_owned())
 }
 
 /// The front cover inside the file, or a picture beside it.
