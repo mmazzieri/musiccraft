@@ -4,7 +4,7 @@ use crate::model::Info;
 use lofty::config::WriteOptions;
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::picture::PictureType;
-use lofty::tag::{Accessor, ItemKey, Tag, TagExt};
+use lofty::tag::{Accessor, ItemKey, Tag, TagExt, TagType};
 use std::path::Path;
 
 /// The largest picture read from a file or a folder.
@@ -134,12 +134,39 @@ pub fn write_lyrics(file: &Path, text: &str) -> Result<(), String> {
     let text = text.trim_end();
     let mut tagged = lofty::read_from_path(file).map_err(|e| e.to_string())?;
     let kind = tagged.primary_tag_type();
+    let keys = [ItemKey::Lyrics, ItemKey::UnsyncLyrics];
+    // Lyrics in the file's other tags are taken away too, or they would be read again.
+    let others: Vec<TagType> = tagged
+        .tags()
+        .iter()
+        .filter(|t| t.tag_type() != kind && keys.iter().any(|k| t.get(*k).is_some()))
+        .map(Tag::tag_type)
+        .collect();
+    for other in others {
+        if let Some(t) = tagged.tag_mut(other) {
+            for k in keys {
+                t.remove_key(k);
+            }
+            t.save_to_path(file, WriteOptions::default()).map_err(|e| e.to_string())?;
+        }
+    }
     if tagged.primary_tag().is_none() {
-        tagged.insert_tag(Tag::new(kind));
+        // A new tag of the main kind is read first: it starts with what the file's other tag says.
+        let mut fresh = Tag::new(kind);
+        if let Some(other) = tagged.first_tag() {
+            for item in other.items() {
+                fresh.insert(item.clone());
+            }
+            for picture in other.pictures() {
+                fresh.push_picture(picture.clone());
+            }
+        }
+        tagged.insert_tag(fresh);
     }
     let tag = tagged.primary_tag_mut().ok_or("this kind of file has no tags")?;
-    tag.remove_key(ItemKey::Lyrics);
-    tag.remove_key(ItemKey::UnsyncLyrics);
+    for k in keys {
+        tag.remove_key(k);
+    }
     // Each kind of tag has its own name for them; ID3v2 keeps unsynchronised ones apart.
     if !text.is_empty()
         && !tag.insert_text(ItemKey::Lyrics, text.to_owned())
@@ -175,7 +202,45 @@ pub fn picture(file: &Path) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::from_path;
+    use super::{from_path, lyrics, read, write_lyrics};
+    use lofty::config::WriteOptions;
+    use lofty::tag::{Accessor, Tag, TagExt, TagType};
+
+    /// A WAV file of a few silent samples.
+    fn wav(path: &std::path::Path) {
+        let data = [128u8; 64];
+        let mut b = Vec::new();
+        b.extend_from_slice(b"RIFF");
+        b.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
+        b.extend_from_slice(b"WAVEfmt ");
+        b.extend_from_slice(&16u32.to_le_bytes());
+        b.extend_from_slice(&[1, 0, 1, 0]);
+        b.extend_from_slice(&8000u32.to_le_bytes());
+        b.extend_from_slice(&8000u32.to_le_bytes());
+        b.extend_from_slice(&[1, 0, 8, 0]);
+        b.extend_from_slice(b"data");
+        b.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        b.extend_from_slice(&data);
+        std::fs::write(path, b).unwrap();
+    }
+
+    /// Lyrics written into a file whose only tag is of another kind keep what that tag says.
+    #[test]
+    fn lyrics_keep_what_another_tag_says() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("song.wav");
+        wav(&file);
+        let mut info = Tag::new(TagType::RiffInfo);
+        info.set_title("Titolo vero".to_owned());
+        info.save_to_path(&file, WriteOptions::default()).unwrap();
+        assert_eq!(lyrics(&file).unwrap(), "");
+        write_lyrics(&file, "Nuovo testo").unwrap();
+        assert_eq!(read(&file, "song.wav").unwrap().title, "Titolo vero");
+        assert_eq!(lyrics(&file).unwrap(), "Nuovo testo");
+        write_lyrics(&file, "").unwrap();
+        assert_eq!(lyrics(&file).unwrap(), "");
+        assert_eq!(read(&file, "song.wav").unwrap().title, "Titolo vero");
+    }
 
     /// A song whose file is still in the cloud is listed under the artist, album and number its
     /// path gives, and a title that merely starts with digits keeps them.

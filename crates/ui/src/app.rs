@@ -489,6 +489,7 @@ impl App {
                 self.demo = false;
                 self.view = View::RecentlyAdded;
                 self.rows.clear();
+                self.lyrics = None;
             }
             Err(e) => self.engine.error("The library could not be opened: {}", &e),
         }

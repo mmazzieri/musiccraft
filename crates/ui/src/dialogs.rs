@@ -26,8 +26,10 @@ pub struct Text {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Lyrics {
     Unread,
-    /// Several songs, or a song whose file cannot be read here.
+    /// Several songs.
     Absent,
+    /// Why the song's lyrics cannot be read here.
+    Unreadable(String),
     Text(Text),
 }
 
@@ -545,11 +547,13 @@ fn info(
     about: &str,
 ) -> bool {
     if *lyrics == Lyrics::Unread {
-        let read = match (ids, app.engine.library()) {
-            ([id], Some(lib)) => lib.lyrics(id).ok(),
-            _ => None,
+        *lyrics = match (ids, app.engine.library()) {
+            ([id], Some(lib)) => match lib.lyrics(id) {
+                Ok(first) => Lyrics::Text(Text { now: first.clone(), first }),
+                Err(e) => Lyrics::Unreadable(e.to_string()),
+            },
+            _ => Lyrics::Absent,
         };
-        *lyrics = read.map_or(Lyrics::Absent, |first| Lyrics::Text(Text { now: first.clone(), first }));
     }
     let weak = tokens(ui).weak;
     ui.heading(app.lang.t("Song Information"));
@@ -579,6 +583,9 @@ fn info(
             ui.end_row();
         }
     });
+    if let Lyrics::Unreadable(why) = lyrics {
+        ui.label(egui::RichText::new(app.lang.f("The lyrics could not be read: {}", why.as_str())).color(weak));
+    }
     if let Lyrics::Text(text) = lyrics {
         let l = ui.label(app.lang.t("Lyrics"));
         egui::ScrollArea::vertical().id_salt("lyrics").max_height(220.0).show(ui, |ui| {
