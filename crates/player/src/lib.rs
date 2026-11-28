@@ -388,9 +388,16 @@ impl Thread {
 impl Thread {
     /// Lets a broken device go, so that its stream stops and the next play opens it again.
     fn lose_device(&mut self) {
+        // A song being opened to replace the current one carries on: it opens the device again
+        // when it is ready. Only a preloaded next song goes with the old player.
+        let replacing = self.opening.take_if(|o| !o.next);
         self.drop_player();
+        self.opening = replacing;
         self.device = None;
         self.health = health::Health::default();
+        if self.opening.is_some() {
+            return;
+        }
         let mut s = lock(&self.state);
         // A song asked for but not yet started is left to its own load.
         if s.current == self.current && matches!(s.status, Status::Playing | Status::Paused | Status::Loading) {
