@@ -9,6 +9,8 @@ use std::path::Path;
 
 /// The largest picture read from a file or a folder.
 const MAX_PICTURE: u64 = 24 * 1024 * 1024;
+/// The most lyrics read from a file or written into one, in bytes.
+pub const MAX_LYRICS: usize = 64 * 1024;
 
 /// Reads the tags of `file`; `rel` is its path below `Music/`. Fields without a tag are filled
 /// from the path.
@@ -101,6 +103,49 @@ pub fn write(file: &Path, info: &Info) -> Result<(), String> {
         tag.set_disk(info.disc);
     } else {
         tag.remove_disk();
+    }
+    tag.save_to_path(file, WriteOptions::default()).map_err(|e| e.to_string())
+}
+
+/// The unsynchronised lyrics inside the file, empty when it has none. Longer lyrics are cut at
+/// [`MAX_LYRICS`].
+pub fn lyrics(file: &Path) -> Result<String, String> {
+    let tagged = lofty::read_from_path(file).map_err(|e| e.to_string())?;
+    let tags = tagged.primary_tag().into_iter().chain(tagged.tags());
+    let found = tags
+        .flat_map(|t| [ItemKey::UnsyncLyrics, ItemKey::Lyrics].map(|k| t.get_string(k)))
+        .flatten()
+        .map(|v| v.trim_matches(['\0', ' ', '\r', '\n', '\t']))
+        .find(|v| !v.is_empty())
+        .unwrap_or("");
+    let mut end = found.len().min(MAX_LYRICS);
+    while !found.is_char_boundary(end) {
+        end -= 1;
+    }
+    Ok(found.get(..end).unwrap_or("").replace("\r\n", "\n").replace('\r', "\n"))
+}
+
+/// Writes the lyrics into the file's own tags; empty text takes them away.
+pub fn write_lyrics(file: &Path, text: &str) -> Result<(), String> {
+    if text.len() > MAX_LYRICS {
+        return Err(format!("lyrics are kept up to {} KB", MAX_LYRICS / 1024));
+    }
+    let text: String = text.chars().filter(|c| *c != '\0').collect();
+    let text = text.trim_end();
+    let mut tagged = lofty::read_from_path(file).map_err(|e| e.to_string())?;
+    let kind = tagged.primary_tag_type();
+    if tagged.primary_tag().is_none() {
+        tagged.insert_tag(Tag::new(kind));
+    }
+    let tag = tagged.primary_tag_mut().ok_or("this kind of file has no tags")?;
+    tag.remove_key(ItemKey::Lyrics);
+    tag.remove_key(ItemKey::UnsyncLyrics);
+    // Each kind of tag has its own name for them; ID3v2 keeps unsynchronised ones apart.
+    if !text.is_empty()
+        && !tag.insert_text(ItemKey::Lyrics, text.to_owned())
+        && !tag.insert_text(ItemKey::UnsyncLyrics, text.to_owned())
+    {
+        return Err("this kind of file cannot hold lyrics".to_owned());
     }
     tag.save_to_path(file, WriteOptions::default()).map_err(|e| e.to_string())
 }

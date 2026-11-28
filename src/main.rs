@@ -25,7 +25,7 @@ const HELP: &str = "MusicCraft
   musiccraft --demo                 open it with a demonstration library
   musiccraft --type-paths           ask for paths in the window, not in the system's file chooser
   musiccraft --screenshot FILE.png  save a picture of the window and end
-      --view NAME     albums, album, artists, songs, genres, radio, services or welcome
+      --view NAME     albums, album, lyrics, artists, songs, genres, radio, services or welcome
       --theme NAME    light or dark
       --language CODE en or it
   musiccraft --version";

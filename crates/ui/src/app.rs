@@ -118,6 +118,9 @@ pub struct App {
     pub service_search: String,
     pub dialog: Option<Dialog>,
     pub show_queue: bool,
+    pub show_lyrics: bool,
+    /// The lyrics last read: the song, the library's revision then, and what was read.
+    pub(crate) lyrics: Option<(String, u64, Result<String, String>)>,
     pub compact: bool,
     pub actions: Vec<Action>,
     /// Where the seek slider is held.
@@ -176,7 +179,7 @@ impl App {
         };
         set_theme(ctx, theme);
         let view = match options.view.as_str() {
-            "albums" | "album" => View::Albums,
+            "albums" | "album" | "lyrics" => View::Albums,
             "artists" => View::Artists,
             "songs" => View::Songs,
             "genres" => View::Genres,
@@ -184,6 +187,14 @@ impl App {
             "services" => View::Services,
             _ => View::RecentlyAdded,
         };
+        // A picture of the lyrics of the song that is playing.
+        let lyrics = options.view == "lyrics";
+        if lyrics && options.screenshot.is_some() {
+            let song = engine.library().and_then(|l| l.tracks().find(|t| t.info.title == "Molo Nove"));
+            if let Some(id) = song.map(|t| t.id.clone()) {
+                engine.hold(vec![musiccraft_library::Item::local(&id)], 0);
+            }
+        }
         // A picture of an open album, beside the queue.
         let open = options.view == "album";
         let open_album = engine
@@ -209,6 +220,8 @@ impl App {
             service_search: String::new(),
             dialog: None,
             show_queue: open,
+            show_lyrics: lyrics,
+            lyrics: None,
             compact: false,
             actions: Vec::new(),
             seeking: None,
@@ -511,6 +524,14 @@ impl App {
                 .size_range(220.0..=460.0)
                 .resizable(true)
                 .show(ui, |ui| self.queue_panel(ui));
+        }
+        if self.show_lyrics {
+            egui::Panel::right("lyrics")
+                .frame(egui::Frame::new().fill(t.sidebar).inner_margin(8))
+                .default_size(290.0)
+                .size_range(220.0..=520.0)
+                .resizable(true)
+                .show(ui, |ui| self.lyrics_panel(ui));
         }
         egui::CentralPanel::default().frame(egui::Frame::new().fill(t.content)).show(ui, |ui| self.content(ui));
     }

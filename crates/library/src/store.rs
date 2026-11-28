@@ -35,6 +35,8 @@ pub enum LibraryError {
     SmartItems,
     #[error("the song's file is not on this computer")]
     NotHere,
+    #[error("the song has no file")]
+    NoFile,
     #[error("the tags could not be written: {0}")]
     Tags(String),
     #[error("{0}")]
@@ -798,6 +800,38 @@ impl Library {
         crate::tags::write(&file, &info).map_err(LibraryError::Tags)?;
         info.size = std::fs::metadata(&file).map(|m| m.len()).unwrap_or(info.size);
         info.guessed = false;
+        let value = serde_json::to_value(&info).unwrap_or(Value::Null);
+        self.set(Section::Tracks, &format!("track/{id}"), "info", value);
+        self.touch(id);
+        Ok(())
+    }
+
+    /// The file of a song, when it is on this computer and not only in the cloud.
+    fn file_here(&self, id: &str) -> Result<PathBuf, LibraryError> {
+        let track = self.tracks.get(id).ok_or(LibraryError::NoTrack)?;
+        if track.info.path.is_empty() {
+            return Err(LibraryError::NoFile);
+        }
+        let file = self.file(id).ok_or(LibraryError::NotHere)?;
+        let meta = std::fs::metadata(&file).map_err(|_| LibraryError::NotHere)?;
+        if crate::cloud::online_only(&meta) {
+            return Err(LibraryError::NotHere);
+        }
+        Ok(file)
+    }
+
+    /// The lyrics inside a song's file; empty when it has none. They are not kept in the catalogue.
+    pub fn lyrics(&self, id: &str) -> Result<String, LibraryError> {
+        crate::tags::lyrics(&self.file_here(id)?).map_err(LibraryError::Other)
+    }
+
+    /// Writes a song's lyrics into its file, where other computers read them.
+    pub fn set_lyrics(&mut self, id: &str, text: &str) -> Result<(), LibraryError> {
+        let file = self.file_here(id)?;
+        crate::tags::write_lyrics(&file, text).map_err(LibraryError::Tags)?;
+        let Some(track) = self.tracks.get(id) else { return Err(LibraryError::NoTrack) };
+        let mut info = track.info.clone();
+        info.size = std::fs::metadata(&file).map(|m| m.len()).unwrap_or(info.size);
         let value = serde_json::to_value(&info).unwrap_or(Value::Null);
         self.set(Section::Tracks, &format!("track/{id}"), "info", value);
         self.touch(id);

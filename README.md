@@ -25,6 +25,8 @@ app, and it is not affiliated with ArtCraft, Apple or Spotify. Other projects us
 
 - **Library**: recently added, artists, albums, songs, genres, search, column browser, love, 0–5 stars, play
   counts, tag editing written into the files.
+- **Lyrics**: the lyrics inside a song's file, shown for the song that is playing (*View › Lyrics*) and
+  edited in *Song Information*, written into the file. Nothing is looked up on the internet.
 - **A stable library**: it also holds songs you have no file of. Those play from the *service in use*, and
   change nothing but their source when you choose another. A song keeps its love, stars, play count and
   playlists through that, and takes its file when one arrives.
@@ -64,7 +66,8 @@ like a computer does. There are no packages yet: build them as [docs/mobile.md](
   never the service in use unless you choose it. MusicCraft does not decode, record or download Spotify's audio. Spotify lists only the
   contents of playlists you own or work on.
 - No Opus, WMA, APE or DSD, no HE-AAC at its full bandwidth, no equalizer, no CD ripping or burning, no copying
-  to music players (the phone apps share the folder instead), no podcasts, no lyrics.
+  to music players (the phone apps share the folder instead), no podcasts, no timed lyrics and no
+  lyrics from the internet.
 - It does not read other programs' databases, only the library they export. Films, podcasts, audiobooks and
   protected files are left out or added without the file; smart playlists become ordinary ones.
 - No web build. The MCP server covers the library and its playlists: no playing, no services, no radio. The command
