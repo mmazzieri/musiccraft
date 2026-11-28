@@ -77,13 +77,49 @@ jobs:
 
   windows:
     runs-on: windows-latest
+    env:
+      APP_NAME: MusicCraft
+      SIGN: ${{ github.event_name != 'pull_request' && secrets.CERTUM_OTPAUTH != '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install WiX v5
         run: dotnet tool install --global wix --version 5.0.2
-      - run: pwsh packaging/windows/package.ps1
+      - name: Build and check the programs
+        run: pwsh packaging/windows/package.ps1 -BuildOnly
+      # Windows signing: Certum Open Source certificate in the cloud (SimplySign), signed in with the
+      # account's TOTP. Runs only when the secrets are set, and never for pull requests.
+      - name: Sign in to SimplySign (skipped without the signing secrets)
+        if: env.SIGN == 'true'
+        uses: TIANLI0/codesign@4d4b0a2902185764953a35ccf754f31e7179cbfb # v1, MIT
+        with:
+          email: ${{ secrets.CERTUM_EMAIL }}
+          otpauth: ${{ secrets.CERTUM_OTPAUTH }}
+          thumbprint: ${{ vars.CERTUM_THUMBPRINT }}
+      - name: Sign the programs
+        if: env.SIGN == 'true'
+        uses: TIANLI0/codesign/sign@4d4b0a2902185764953a35ccf754f31e7179cbfb
+        with:
+          root: target/x86_64-pc-windows-msvc/release
+          files: |
+            musiccraft.exe
+            musiccraft-cli.exe
+          description: ${{ env.APP_NAME }}
+          description-url: https://github.com/${{ github.repository }}
+      - name: Package
+        run: pwsh packaging/windows/package.ps1 -SkipBuild
+      - name: Sign the installer
+        if: env.SIGN == 'true'
+        uses: TIANLI0/codesign/sign@4d4b0a2902185764953a35ccf754f31e7179cbfb
+        with:
+          root: dist/release
+          files: '*.msi'
+          description: ${{ env.APP_NAME }}
+          description-url: https://github.com/${{ github.repository }}
+      - name: Sign out of SimplySign
+        if: always() && env.SIGN == 'true'
+        uses: TIANLI0/codesign/logout@4d4b0a2902185764953a35ccf754f31e7179cbfb
       - name: Check the MSI installs and removes cleanly (per user)
         shell: pwsh
         run: |
