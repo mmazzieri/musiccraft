@@ -152,7 +152,7 @@ fn main_tag(tagged: &mut lofty::file::TaggedFile) -> Result<&mut Tag, String> {
         let mut fresh = Tag::new(tagged.primary_tag_type());
         if let Some(other) = tagged.first_tag() {
             for item in other.items() {
-                fresh.insert(item.clone());
+                fresh.push(item.clone());
             }
             for picture in other.pictures() {
                 fresh.push_picture(picture.clone());
