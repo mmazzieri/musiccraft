@@ -45,7 +45,7 @@ pub enum Command {
         on: bool,
     },
     /// Plays songs louder or softer, from the loudness their tags give, so that they sound equally
-    /// loud; from the next song that starts.
+    /// loud; at once, for the song playing too.
     EvenVolume {
         on: bool,
     },

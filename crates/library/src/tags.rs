@@ -227,9 +227,11 @@ pub fn leveling(file: &Path) -> Option<f32> {
 
 /// The factor for a gain in dB and a peak (1.0 is full scale), within the limits above.
 fn factor(db: f32, peak: Option<f32>) -> f32 {
+    const LEAST: f32 = 0.1; // −20 dB
     let mut f = 10f32.powf(db.clamp(-20.0, 10.0) / 20.0);
     if let Some(peak) = peak.filter(|p| p.is_finite() && *p > 0.0) {
-        f = f.min(1.0 / peak);
+        // A peak far above full scale is a wrong tag, not a reason to play the song in a whisper.
+        f = f.min(1.0 / peak).max(LEAST);
     }
     if f.is_finite() && f > 0.0 { f } else { 1.0 }
 }
@@ -244,7 +246,9 @@ fn parse_db(text: &str) -> Option<f32> {
 /// iTunes' volume adjustment: ten hexadecimal numbers; the first two are the loudness of each
 /// channel in thousandths of a reference level, the seventh and eighth their peaks out of 32768.
 fn itunnorm(text: &str) -> Option<(f32, Option<f32>)> {
-    let values: Vec<u32> = text.split_whitespace().take(10).filter_map(|v| u32::from_str_radix(v, 16).ok()).collect();
+    // A field that is not a number makes the whole tag doubtful: the others would shift places.
+    let values =
+        text.split_whitespace().take(10).map(|v| u32::from_str_radix(v, 16).ok()).collect::<Option<Vec<u32>>>()?;
     let loudness = (*values.first()?).max(*values.get(1)?);
     if loudness == 0 {
         return None;
@@ -364,6 +368,8 @@ mod tests {
         assert!(parse_db(" +2.25 dB ").is_some_and(|v| v > 2.0));
         assert_eq!(itunnorm("0 0 0"), None);
         assert_eq!(itunnorm("zz"), None);
+        assert_eq!(itunnorm("12C 12C zz 0 0 0 8000 1000 0 0"), None);
+        assert!(factor(0.0, Some(32768.0)) >= 0.1 - 1e-6);
         let (louder, _) = itunnorm("00000100 00000100").unwrap();
         let (softer, _) = itunnorm("00002000 00002000").unwrap();
         assert!(louder > softer);
