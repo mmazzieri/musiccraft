@@ -13,6 +13,7 @@ use musiccraft_library::model::Info;
 use musiccraft_library::query::Sort;
 use musiccraft_library::smart::{FIELDS, Field, Op, Rule, Rules};
 use musiccraft_library::{Item, default_folder};
+use std::path::Path;
 
 /// A text of the tag editor: its first value and the one typed.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -420,13 +421,19 @@ fn type_path(app: &mut App, ui: &mut Ui, want: &Want, path: &mut String, missing
         Want::SavePlaylist { .. } => (l.t("File to save the playlist in"), l.t("Save"), false),
     };
     field(ui, label, path, true, false);
-    let typed = chooser::typed(path, chooser::home());
+    // A relative path is taken from where MusicCraft was started, and kept whole, so that the
+    // library is the same folder the next time, wherever it is started from.
+    let typed = chooser::typed(path, chooser::home()).map(|p| std::path::absolute(&p).unwrap_or(p));
     let absent = typed.as_deref().is_some_and(|p| must_exist && !p.exists());
+    let replaces = matches!(want, Want::SavePlaylist { .. }) && typed.as_deref().is_some_and(Path::exists);
     if absent {
         ui.label(egui::RichText::new(app.lang.t("Nothing is at this path.")).color(t.error));
+    } else if replaces {
+        ui.label(egui::RichText::new(app.lang.t("A file is already there: saving replaces it.")).color(t.error));
     } else {
         ui.label(egui::RichText::new(app.lang.t("~ stands for your home folder.")).color(t.weak));
     }
+    let yes = if replaces { l.t("Replace") } else { yes };
     let (yes, no) = buttons(app, ui, yes, typed.is_some() && !absent);
     if yes && let Some(p) = typed {
         app.chosen(want.clone(), vec![p]);

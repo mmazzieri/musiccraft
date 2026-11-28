@@ -77,7 +77,7 @@ pub fn available() -> bool {
     true
 }
 
-/// zenity is on the search path.
+/// zenity is on the search path, as a program that can be run.
 #[cfg(any(
     target_os = "linux",
     target_os = "freebsd",
@@ -86,7 +86,9 @@ pub fn available() -> bool {
     target_os = "openbsd"
 ))]
 fn zenity() -> bool {
-    std::env::var_os("PATH").is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join("zenity").is_file()))
+    use std::os::unix::fs::PermissionsExt;
+    let runnable = |p: PathBuf| std::fs::metadata(p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0);
+    std::env::var_os("PATH").is_some_and(|path| std::env::split_paths(&path).any(|dir| runnable(dir.join("zenity"))))
 }
 
 /// The desktop portal answers for its file chooser: a portal without a backend that draws the

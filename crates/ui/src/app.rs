@@ -371,9 +371,13 @@ impl App {
 
     /// Shows the system's file chooser, or, where there is none, a dialog that asks for the path.
     fn choose(&mut self, want: Want) {
-        let missing = !chooser::available();
-        if missing || self.options.type_paths {
-            self.dialog = Some(Dialog::type_path(want, missing));
+        // Asked for in the window, the system is not probed at all.
+        if self.options.type_paths {
+            self.dialog = Some(Dialog::type_path(want, false));
+            return;
+        }
+        if !chooser::available() {
+            self.dialog = Some(Dialog::type_path(want, true));
             return;
         }
         let d = rfd::FileDialog::new();

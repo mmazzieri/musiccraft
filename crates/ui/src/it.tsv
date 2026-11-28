@@ -2,6 +2,7 @@
 1. At developer.spotify.com create an app of your own (it is free).	1. Su developer.spotify.com crea una tua app (è gratuito).
 2. As its redirect address enter	2. Come indirizzo di reindirizzamento inserisci
 3. Paste its Client ID here and sign in.	3. Incolla qui il suo Client ID e accedi.
+A file is already there: saving replaces it.	C'è già un file: salvando lo sostituisci.
 A music library and player for your files, servers, radio and subscriptions.	Libreria e lettore musicale per i tuoi file, server, radio e abbonamenti.
 About MusicCraft	Informazioni su MusicCraft
 Account	Account
@@ -164,6 +165,7 @@ Rename…	Rinomina…
 Repeat: all	Ripeti: tutto
 Repeat: off	Ripeti: no
 Repeat: one song	Ripeti: un brano
+Replace	Sostituisci
 Results for “{}”	Risultati per «{}»
 Right-click songs and choose Add to Playlist.	Fai clic destro sui brani e scegli Aggiungi a playlist.
 Save	Salva
