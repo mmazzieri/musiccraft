@@ -326,8 +326,7 @@ impl Thread {
     fn play(&mut self, opened: Opened, cancel: stream::Cancel, o: &Opening) -> Result<(), String> {
         let (start, paused) = (o.start, o.paused);
         if self.device.is_none() {
-            let health = health::Health::default();
-            let mut device = open_device(&health)?;
+            let (mut device, health) = open_device()?;
             device.log_on_drop(false);
             self.device = Some(device);
             self.health = health;
@@ -393,7 +392,8 @@ impl Thread {
         self.device = None;
         self.health = health::Health::default();
         let mut s = lock(&self.state);
-        if matches!(s.status, Status::Playing | Status::Paused | Status::Loading) {
+        // A song asked for but not yet started is left to its own load.
+        if s.current == self.current && matches!(s.status, Status::Playing | Status::Paused | Status::Loading) {
             s.status = Status::Failed;
             s.error = "the sound device stopped working; play the song again to retry".to_owned();
         }
@@ -401,22 +401,21 @@ impl Thread {
 }
 
 /// The default output device, or else another one that works, with our own error callback.
-fn open_device(health: &health::Health) -> Result<rodio::stream::MixerDeviceSink, String> {
+/// Each try has a count of its own, so that what a failed try reported is not held against the
+/// device that opens.
+fn open_device() -> Result<(rodio::stream::MixerDeviceSink, health::Health), String> {
     use rodio::DeviceTrait;
     use rodio::cpal::traits::HostTrait;
-    let first = rodio::stream::DeviceSinkBuilder::from_default_device()
-        .and_then(|b| b.with_error_callback(health.callback()).open_sink_or_fallback());
+    let attempt = |builder: rodio::stream::DeviceSinkBuilder| {
+        let health = health::Health::default();
+        builder.with_error_callback(health.callback()).open_sink_or_fallback().map(|sink| (sink, health))
+    };
+    let first = rodio::stream::DeviceSinkBuilder::from_default_device().and_then(attempt);
     first.or_else(|original| {
         let devices = rodio::cpal::default_host().output_devices().map_err(|_| original.to_string())?;
         devices
             .filter(|d| d.description().is_ok_and(|desc| desc.driver().is_some_and(|driver| driver != "null")))
-            .find_map(|d| {
-                rodio::stream::DeviceSinkBuilder::from_device(d)
-                    .ok()?
-                    .with_error_callback(health.callback())
-                    .open_sink_or_fallback()
-                    .ok()
-            })
+            .find_map(|d| rodio::stream::DeviceSinkBuilder::from_device(d).and_then(attempt).ok())
             .ok_or_else(|| original.to_string())
     })
 }

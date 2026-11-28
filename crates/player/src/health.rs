@@ -51,17 +51,24 @@ pub(crate) struct Count {
 impl Count {
     /// Counts an error; returns the line to log, if one is due.
     pub(crate) fn record(&mut self, weight: Weight, text: &str, now: Instant) -> Option<String> {
-        match self.window_start {
-            Some(start) if now.saturating_duration_since(start) < WINDOW => {
-                self.in_window = self.in_window.saturating_add(1);
+        match weight {
+            Weight::Fatal => self.broken = true,
+            // Only doubtful errors count towards a stream that keeps failing: underruns never do.
+            Weight::Doubtful => {
+                match self.window_start {
+                    Some(start) if now.saturating_duration_since(start) < WINDOW => {
+                        self.in_window = self.in_window.saturating_add(1);
+                    }
+                    _ => {
+                        self.window_start = Some(now);
+                        self.in_window = 1;
+                    }
+                }
+                if self.in_window >= BROKEN_AFTER {
+                    self.broken = true;
+                }
             }
-            _ => {
-                self.window_start = Some(now);
-                self.in_window = 1;
-            }
-        }
-        if weight == Weight::Fatal || (weight == Weight::Doubtful && self.in_window >= BROKEN_AFTER) {
-            self.broken = true;
+            Weight::Passing => {}
         }
         let due = self.last_log.is_none_or(|last| now.saturating_duration_since(last) >= LOG_EVERY);
         if !due {
@@ -143,6 +150,17 @@ mod tests {
         for s in 0..120u64 {
             count.record(Weight::Doubtful, "busy", start + Duration::from_secs(3600 + s * 5));
         }
+        assert!(!count.broken());
+    }
+
+    #[test]
+    fn underruns_do_not_push_a_single_doubtful_error_over_the_limit() {
+        let mut count = Count::default();
+        let start = Instant::now();
+        for i in 0..u64::from(BROKEN_AFTER) {
+            count.record(Weight::Passing, "underrun", start + Duration::from_micros(i));
+        }
+        count.record(Weight::Doubtful, "busy", start + Duration::from_millis(1));
         assert!(!count.broken());
     }
 
