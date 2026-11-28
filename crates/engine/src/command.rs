@@ -77,6 +77,11 @@ pub enum Command {
         ids: Vec<String>,
         tags: TagEdit,
     },
+    /// Writes a song's lyrics into its file; empty text takes them away.
+    LyricsSet {
+        id: String,
+        text: String,
+    },
     Remove {
         ids: Vec<String>,
     },
@@ -219,6 +224,10 @@ pub enum Command {
     Albums,
     Playlists,
     PlaylistSongs {
+        id: String,
+    },
+    /// The lyrics inside a song's file.
+    Lyrics {
         id: String,
     },
     Stations,

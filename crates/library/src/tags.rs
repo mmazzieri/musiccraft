@@ -4,11 +4,13 @@ use crate::model::Info;
 use lofty::config::WriteOptions;
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::picture::PictureType;
-use lofty::tag::{Accessor, ItemKey, Tag, TagExt};
+use lofty::tag::{Accessor, ItemKey, Tag, TagExt, TagItem};
 use std::path::Path;
 
 /// The largest picture read from a file or a folder.
 const MAX_PICTURE: u64 = 24 * 1024 * 1024;
+/// The most lyrics read from a file or written into one, in bytes.
+pub const MAX_LYRICS: usize = 64 * 1024;
 
 /// Reads the tags of `file`; `rel` is its path below `Music/`. Fields without a tag are filled
 /// from the path.
@@ -71,11 +73,7 @@ pub fn from_path(rel: &str) -> Info {
 /// Writes the person's edits into the file's own tags.
 pub fn write(file: &Path, info: &Info) -> Result<(), String> {
     let mut tagged = lofty::read_from_path(file).map_err(|e| e.to_string())?;
-    let kind = tagged.primary_tag_type();
-    if tagged.primary_tag().is_none() {
-        tagged.insert_tag(Tag::new(kind));
-    }
-    let tag = tagged.primary_tag_mut().ok_or("this kind of file has no tags")?;
+    let tag = main_tag(&mut tagged)?;
     tag.set_title(info.title.clone());
     tag.set_artist(info.artist.clone());
     tag.set_album(info.album.clone());
@@ -105,6 +103,75 @@ pub fn write(file: &Path, info: &Info) -> Result<(), String> {
     tag.save_to_path(file, WriteOptions::default()).map_err(|e| e.to_string())
 }
 
+/// The unsynchronised lyrics inside the file, empty when it has none. Longer lyrics are cut at
+/// [`MAX_LYRICS`]. They come from the tag [`read`] takes the other fields from, the one
+/// [`write_lyrics`] writes, so lyrics left in another tag are never shown again.
+pub fn lyrics(file: &Path) -> Result<String, String> {
+    let tagged = lofty::read_from_path(file).map_err(|e| e.to_string())?;
+    let Some(tag) = tagged.primary_tag().or_else(|| tagged.first_tag()) else { return Ok(String::new()) };
+    let found = [ItemKey::UnsyncLyrics, ItemKey::Lyrics]
+        .into_iter()
+        .flat_map(|k| tag.get_strings(k))
+        .map(|v| v.trim_matches(['\0', ' ', '\r', '\n', '\t']))
+        .find(|v| !v.is_empty())
+        .unwrap_or("");
+    let mut end = found.len().min(MAX_LYRICS);
+    while !found.is_char_boundary(end) {
+        end -= 1;
+    }
+    Ok(found.get(..end).unwrap_or("").replace("\r\n", "\n").replace('\r', "\n"))
+}
+
+/// Writes the lyrics into the file's own tags; empty text takes them away.
+pub fn write_lyrics(file: &Path, text: &str) -> Result<(), String> {
+    if text.len() > MAX_LYRICS {
+        return Err(format!("lyrics are kept up to {} KB", MAX_LYRICS / 1024));
+    }
+    let text: String = text.chars().filter(|c| *c != '\0').collect();
+    let text = text.trim_end();
+    let mut tagged = lofty::read_from_path(file).map_err(|e| e.to_string())?;
+    let keys = [ItemKey::Lyrics, ItemKey::UnsyncLyrics];
+    let tag = main_tag(&mut tagged)?;
+    for k in keys {
+        tag.remove_key(k);
+    }
+    // Each kind of tag has its own name for them; ID3v2 keeps unsynchronised ones apart.
+    if !text.is_empty()
+        && !tag.insert_text(ItemKey::Lyrics, text.to_owned())
+        && !tag.insert_text(ItemKey::UnsyncLyrics, text.to_owned())
+    {
+        return Err("this kind of file cannot hold lyrics".to_owned());
+    }
+    tag.save_to_path(file, WriteOptions::default()).map_err(|e| e.to_string())
+}
+
+/// The tag of the file's main kind, made when missing from what the file's other tag says, so
+/// that an edit keeps the fields and lyrics written there.
+fn main_tag(tagged: &mut lofty::file::TaggedFile) -> Result<&mut Tag, String> {
+    if tagged.primary_tag().is_none() {
+        let mut fresh = Tag::new(tagged.primary_tag_type());
+        if let Some(other) = tagged.first_tag() {
+            for item in other.items() {
+                if fresh.push(item.clone()) {
+                    continue;
+                }
+                // Lyrics have a different key in each kind of tag (APE `Lyrics`, ID3v2 USLT).
+                let other_key = match item.key() {
+                    ItemKey::Lyrics => ItemKey::UnsyncLyrics,
+                    ItemKey::UnsyncLyrics => ItemKey::Lyrics,
+                    _ => continue,
+                };
+                fresh.push(TagItem::new(other_key, item.value().clone()));
+            }
+            for picture in other.pictures() {
+                fresh.push_picture(picture.clone());
+            }
+        }
+        tagged.insert_tag(fresh);
+    }
+    tagged.primary_tag_mut().ok_or_else(|| "this kind of file has no tags".to_owned())
+}
+
 /// The front cover inside the file, or a picture beside it.
 pub fn picture(file: &Path) -> Option<Vec<u8>> {
     if let Ok(tagged) = lofty::read_from_path(file) {
@@ -130,7 +197,45 @@ pub fn picture(file: &Path) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::from_path;
+    use super::{from_path, lyrics, read, write_lyrics};
+    use lofty::config::WriteOptions;
+    use lofty::tag::{Accessor, Tag, TagExt, TagType};
+
+    /// A WAV file of a few silent samples.
+    fn wav(path: &std::path::Path) {
+        let data = [128u8; 64];
+        let mut b = Vec::new();
+        b.extend_from_slice(b"RIFF");
+        b.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
+        b.extend_from_slice(b"WAVEfmt ");
+        b.extend_from_slice(&16u32.to_le_bytes());
+        b.extend_from_slice(&[1, 0, 1, 0]);
+        b.extend_from_slice(&8000u32.to_le_bytes());
+        b.extend_from_slice(&8000u32.to_le_bytes());
+        b.extend_from_slice(&[1, 0, 8, 0]);
+        b.extend_from_slice(b"data");
+        b.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        b.extend_from_slice(&data);
+        std::fs::write(path, b).unwrap();
+    }
+
+    /// Lyrics written into a file whose only tag is of another kind keep what that tag says.
+    #[test]
+    fn lyrics_keep_what_another_tag_says() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("song.wav");
+        wav(&file);
+        let mut info = Tag::new(TagType::RiffInfo);
+        info.set_title("Titolo vero".to_owned());
+        info.save_to_path(&file, WriteOptions::default()).unwrap();
+        assert_eq!(lyrics(&file).unwrap(), "");
+        write_lyrics(&file, "Nuovo testo").unwrap();
+        assert_eq!(read(&file, "song.wav").unwrap().title, "Titolo vero");
+        assert_eq!(lyrics(&file).unwrap(), "Nuovo testo");
+        write_lyrics(&file, "").unwrap();
+        assert_eq!(lyrics(&file).unwrap(), "");
+        assert_eq!(read(&file, "song.wav").unwrap().title, "Titolo vero");
+    }
 
     /// A song whose file is still in the cloud is listed under the artist, album and number its
     /// path gives, and a title that merely starts with digits keeps them.

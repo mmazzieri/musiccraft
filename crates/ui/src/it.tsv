@@ -15,6 +15,7 @@ Add a Rule	Aggiungi una regola
 Add a Server…	Aggiungi un server…
 Add a Station	Aggiungi una stazione
 Add a Station by Address…	Aggiungi una stazione per indirizzo…
+Add Lyrics…	Aggiungi il testo…
 Add to Playlist	Aggiungi a playlist
 Add to Queue	Aggiungi alla coda
 Added	Aggiunto
@@ -44,6 +45,7 @@ Choose Library Folder…	Scegli la cartella della libreria…
 Clear	Svuota
 Client ID	Client ID
 Close	Chiudi
+Close the lyrics	Chiudi il testo
 Close the queue	Chiudi la coda
 Column Browser in Songs	Browser a colonne in Brani
 Compact Player	Lettore compatto
@@ -98,6 +100,7 @@ Louder	Alza il volume
 Love	Mi piace
 Love (1 or 0)	Mi piace (1 o 0)
 Loved Songs	Brani che mi piacciono
+Lyrics	Testo
 Minutes	Minuti
 Most Played	Più ascoltati
 Move Down	Sposta giù
@@ -205,6 +208,9 @@ Stop	Ferma
 Streaming	Streaming
 Streaming Accounts	Account di streaming
 System	Sistema
+The lyrics are too long.	Il testo è troppo lungo.
+The lyrics could not be read: {}	Non è stato possibile leggere il testo: {}
+The lyrics of the song that is playing appear here.	Qui compare il testo del brano in riproduzione.
 The Spotify sign-in did not work: {}	L'accesso a Spotify non è riuscito: {}
 The demonstration library could not be written: {}	La libreria dimostrativa non è stata scritta: {}
 The files stay in the music folder. You can bring the songs back from the Edit menu.	I file restano nella cartella della musica. Puoi ripristinare i brani dal menu Modifica.
@@ -224,6 +230,7 @@ The song cannot be played: {}	Il brano non può essere riprodotto: {}
 The songs stay in the library. The playlist goes from every computer that shares it.	I brani restano nella libreria. La playlist sparisce da tutti i computer che la condividono.
 The station cannot be played: {}	La stazione non può essere riprodotta: {}
 The tags are written into the files.	Le informazioni vengono scritte nei file.
+This song's file has no lyrics.	Il file di questo brano non contiene il testo.
 This system has no window for choosing files. Install the desktop portal with a file chooser (for example xdg-desktop-portal-gtk) or zenity to have one; meanwhile, type the path here.	Questo sistema non ha una finestra per scegliere i file. Per averla installa il portale del desktop con la scelta dei file (per esempio xdg-desktop-portal-gtk) oppure zenity; intanto scrivi qui il percorso.
 Time	Durata
 Title	Titolo

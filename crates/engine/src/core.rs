@@ -1373,6 +1373,7 @@ impl Engine {
                 }
             }
             Command::Edit { ids, tags } => return self.edit(&ids, &tags),
+            Command::LyricsSet { id, text: words } => self.lib_mut()?.set_lyrics(&id, &words).map_err(text)?,
             Command::Remove { ids } => {
                 let lib = self.lib_mut()?;
                 for id in &ids {
@@ -1548,6 +1549,10 @@ impl Engine {
                 let items = self.playlist_items(&id).ok_or("there is no such playlist in the library")?;
                 let rows: Vec<Value> = items.iter().map(|i| json!({ "item": i, "meta": self.meta(i) })).collect();
                 return Ok(Value::Array(rows));
+            }
+            Command::Lyrics { id } => {
+                let lyrics = self.lib_mut()?.lyrics(&id).map_err(text)?;
+                return Ok(json!({ "lyrics": lyrics }));
             }
             Command::Stations => return Ok(data(self.lib_mut()?.stations())),
             Command::Services => {
@@ -1932,6 +1937,36 @@ mod tests {
     fn songs(e: &mut Engine, search: &str) -> Vec<serde_json::Value> {
         let c = Command::Songs { search: search.into(), sort: Sort::Title, descending: false, limit: 0 };
         e.run(c).unwrap().as_array().unwrap().clone()
+    }
+
+    /// Lyrics go into the file, another computer reads them from there, and a song without a file
+    /// says why it has none.
+    #[test]
+    fn lyrics_are_written_into_the_file() {
+        let (outside, root, dir) =
+            (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        crate::demo::write_album(outside.path(), 0, 1, 1).unwrap();
+        let mut e = Engine::isolated(dir.path(), Some(root.path().to_owned()));
+        e.run(Command::Import { paths: vec![outside.path().to_owned()] }).unwrap();
+        e.settle(Duration::from_secs(30));
+        let id = songs(&mut e, "")[0]["id"].as_str().unwrap().to_owned();
+        let lyrics = |e: &mut Engine, id: &str| e.run(Command::Lyrics { id: id.to_owned() });
+        // The demonstration's first song carries lyrics of its own.
+        assert!(lyrics(&mut e, &id).unwrap()["lyrics"].as_str().unwrap().starts_with("Al molo nove"));
+        let words = "Prima riga\r\nseconda riga, è così";
+        e.run(Command::LyricsSet { id: id.clone(), text: words.into() }).unwrap();
+        e.settle(Duration::from_secs(30));
+        let other = tempfile::tempdir().unwrap();
+        let mut b = Engine::isolated(other.path(), Some(root.path().to_owned()));
+        b.settle(Duration::from_secs(30));
+        assert_eq!(lyrics(&mut b, &id).unwrap()["lyrics"], "Prima riga\nseconda riga, è così");
+        assert!(e.run(Command::LyricsSet { id: id.clone(), text: "x".repeat(100_000) }).is_err());
+        e.run(Command::LyricsSet { id: id.clone(), text: String::new() }).unwrap();
+        assert_eq!(lyrics(&mut e, &id).unwrap()["lyrics"], "");
+        e.run(Command::SongAdd { title: "Senza file".into(), artist: "Nessuno".into(), album: String::new() }).unwrap();
+        let without = songs(&mut e, "senza file")[0]["id"].as_str().unwrap().to_owned();
+        assert!(lyrics(&mut e, &without).is_err());
+        assert!(e.run(Command::LyricsSet { id: without, text: "x".into() }).is_err());
     }
 
     /// From files elsewhere on disk to songs in the shared folder, edited, put in a playlist,

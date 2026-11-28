@@ -75,6 +75,10 @@ impl App {
                 if ui.checkbox(&mut queue, self.lang.t("Play queue")).clicked() {
                     self.show_queue = queue;
                 }
+                let mut lyrics = self.show_lyrics;
+                if ui.checkbox(&mut lyrics, self.lang.t("Lyrics")).clicked() {
+                    self.show_lyrics = lyrics;
+                }
                 let mut browser = self.engine.settings.column_browser;
                 if ui.checkbox(&mut browser, self.lang.t("Column Browser in Songs")).clicked() {
                     self.engine.change_settings(|s| s.column_browser = browser);

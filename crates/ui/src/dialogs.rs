@@ -22,6 +22,17 @@ pub struct Text {
     now: String,
 }
 
+/// The lyrics of the song in Song Information, read from its file when the dialog is first drawn.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Lyrics {
+    Unread,
+    /// Several songs.
+    Absent,
+    /// Why the song's lyrics cannot be read here.
+    Unreadable(String),
+    Text(Text),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Dialog {
     NewPlaylist { name: String, items: Vec<Item> },
@@ -29,7 +40,7 @@ pub enum Dialog {
     Rename { id: String, name: String },
     DeletePlaylist { id: String, name: String },
     Remove { ids: Vec<String> },
-    Info { ids: Vec<String>, fields: Vec<(Tag, Text)>, about: String },
+    Info { ids: Vec<String>, fields: Vec<(Tag, Text)>, lyrics: Lyrics, about: String },
     Station { name: String, url: String },
     Server { name: String, url: String, user: String, password: String },
     Soloist { path: String, key: String },
@@ -165,7 +176,7 @@ impl App {
             ),
             many => self.lang.n(many.len(), "{} song", "{} songs"),
         };
-        Dialog::Info { ids: ids.to_vec(), fields, about }
+        Dialog::Info { ids: ids.to_vec(), fields, lyrics: Lyrics::Unread, about }
     }
 }
 
@@ -265,7 +276,7 @@ fn body(app: &mut App, ui: &mut Ui, dialog: &mut Dialog) -> bool {
             !(yes || no)
         }
         Dialog::Smart { id, name, rules } => smart(app, ui, id.as_deref(), name, rules),
-        Dialog::Info { ids, fields, about } => info(app, ui, ids, fields, about),
+        Dialog::Info { ids, fields, lyrics, about } => info(app, ui, ids, fields, lyrics, about),
         Dialog::Station { name, url } => {
             ui.heading(app.lang.t("Add a Station"));
             field(ui, app.lang.t("Name"), name, true, false);
@@ -527,7 +538,23 @@ fn link(
     keep
 }
 
-fn info(app: &mut App, ui: &mut Ui, ids: &[String], fields: &mut [(Tag, Text)], about: &str) -> bool {
+fn info(
+    app: &mut App,
+    ui: &mut Ui,
+    ids: &[String],
+    fields: &mut [(Tag, Text)],
+    lyrics: &mut Lyrics,
+    about: &str,
+) -> bool {
+    if *lyrics == Lyrics::Unread {
+        *lyrics = match (ids, app.engine.library()) {
+            ([id], Some(lib)) => match lib.lyrics(id) {
+                Ok(first) => Lyrics::Text(Text { now: first.clone(), first }),
+                Err(e) => Lyrics::Unreadable(e.to_string()),
+            },
+            _ => Lyrics::Absent,
+        };
+    }
     let weak = tokens(ui).weak;
     ui.heading(app.lang.t("Song Information"));
     ui.label(egui::RichText::new(about).color(weak));
@@ -556,11 +583,29 @@ fn info(app: &mut App, ui: &mut Ui, ids: &[String], fields: &mut [(Tag, Text)], 
             ui.end_row();
         }
     });
+    if let Lyrics::Unreadable(why) = lyrics {
+        ui.label(egui::RichText::new(app.lang.f("The lyrics could not be read: {}", why.as_str())).color(weak));
+    }
+    if let Lyrics::Text(text) = lyrics {
+        let l = ui.label(app.lang.t("Lyrics"));
+        egui::ScrollArea::vertical().id_salt("lyrics").max_height(220.0).show(ui, |ui| {
+            ui.add(egui::TextEdit::multiline(&mut text.now).desired_rows(8).desired_width(470.0)).labelled_by(l.id);
+        });
+    }
     let files = app.engine.library().is_some_and(|l| ids.iter().any(|id| l.file(id).is_some()));
     if files {
         ui.label(egui::RichText::new(app.lang.t("The tags are written into the files.")).color(weak));
     }
-    let changed = fields.iter().any(|(_, t)| t.first != t.now);
+    let tags_changed = fields.iter().any(|(_, t)| t.first != t.now);
+    let new_lyrics = match lyrics {
+        Lyrics::Text(t) if t.first != t.now => Some(t.now.clone()),
+        _ => None,
+    };
+    let lyrics_ok = new_lyrics.as_ref().is_none_or(|t| t.len() <= musiccraft_library::tags::MAX_LYRICS);
+    if !lyrics_ok {
+        ui.label(egui::RichText::new(app.lang.t("The lyrics are too long.")).color(tokens(ui).error));
+    }
+    let changed = (tags_changed || new_lyrics.is_some()) && lyrics_ok;
     let numbers_ok = fields
         .iter()
         .filter(|(tag, _)| matches!(tag, Tag::Year | Tag::Track | Tag::Disc))
@@ -586,7 +631,12 @@ fn info(app: &mut App, ui: &mut Ui, ids: &[String], fields: &mut [(Tag, Text)], 
                 Tag::Disc => e.disc = n,
             }
         }
-        app.cmd(Command::Edit { ids: ids.to_vec(), tags: e });
+        if tags_changed {
+            app.cmd(Command::Edit { ids: ids.to_vec(), tags: e });
+        }
+        if let (Some(text), [id]) = (new_lyrics, ids) {
+            app.cmd(Command::LyricsSet { id: id.clone(), text });
+        }
     }
     !(yes || no)
 }

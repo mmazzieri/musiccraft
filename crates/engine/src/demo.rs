@@ -138,6 +138,18 @@ pub fn write_album(dir: &Path, album: usize, count: usize, seconds: u32) -> Resu
     Ok(())
 }
 
+/// Lyrics of a few demonstration songs, our own words.
+const LYRICS: &[(&str, &str)] = &[
+    (
+        "Molo Nove",
+        "Al molo nove le barche contano le onde,\nuna corda batte piano sull'albero maestro.\n\nNessuno parte stasera,\nil mare ha chiuso le sue porte,\ne il faro tiene il conto\ndi chi torna e di chi resta.",
+    ),
+    (
+        "Fold Lines",
+        "Every map remembers where it was folded,\nthe roads worn thin along the creases.\n\nWe walked the paper soft,\nfound towns that were only ink,\nand drew our own way home\nin pencil, lightly.",
+    ),
+];
+
 fn tag(path: &Path, a: &DemoAlbum, title: &str, n: u32, cover: &[u8]) -> Result<(), String> {
     let file = lofty::read_from_path(path).map_err(|e| e.to_string())?;
     let mut t = Tag::new(file.primary_tag_type());
@@ -150,7 +162,11 @@ fn tag(path: &Path, a: &DemoAlbum, title: &str, n: u32, cover: &[u8]) -> Result<
     t.push_picture(
         Picture::unchecked(cover.to_vec()).pic_type(PictureType::CoverFront).mime_type(MimeType::Png).build(),
     );
-    t.save_to_path(path, WriteOptions::default()).map_err(|e| e.to_string())
+    t.save_to_path(path, WriteOptions::default()).map_err(|e| e.to_string())?;
+    match LYRICS.iter().find(|(song, _)| *song == title) {
+        Some((_, words)) => musiccraft_library::tags::write_lyrics(path, words),
+        None => Ok(()),
+    }
 }
 
 /// A short arpeggio over a soft bass, 8-bit mono.

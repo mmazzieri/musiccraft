@@ -1,4 +1,5 @@
-//! The header: controls, what is playing, search; the tabs; the status bar; the play queue.
+//! The header: controls, what is playing, search; the tabs; the status bar; the play queue and
+//! the lyrics.
 
 use crate::app::{Action, App, Tab, View};
 use crate::i18n::time;
@@ -388,6 +389,61 @@ impl App {
                 ui.push_id(i, |ui| self.queue_row(ui, i, pos, item, &meta));
             }
         });
+    }
+
+    /// The lyrics of the song that is playing, read from its file.
+    pub(crate) fn lyrics_panel(&mut self, ui: &mut Ui) {
+        let t = tokens(ui);
+        ui.horizontal(|ui| {
+            ui.heading(self.lang.t("Lyrics"));
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if icons::button(ui, Icon::Close, 22.0, self.lang.t("Close the lyrics"), t.text).clicked() {
+                    self.show_lyrics = false;
+                }
+            });
+        });
+        ui.separator();
+        let now = self.engine.now();
+        let id = match &now.item {
+            Some(musiccraft_library::Item { source: musiccraft_library::Source::Local, id, .. }) => id.clone(),
+            _ => {
+                self.lyrics = None;
+                ui.add_space(12.0);
+                let text = self.lang.t("The lyrics of the song that is playing appear here.");
+                ui.label(egui::RichText::new(text).color(t.weak));
+                return;
+            }
+        };
+        let revision = self.engine.library().map_or(0, musiccraft_library::Library::revision);
+        let fresh = self.lyrics.as_ref().is_some_and(|(i, r, _)| *i == id && *r == revision);
+        if !fresh {
+            let read = match self.engine.library() {
+                Some(lib) => lib.lyrics(&id).map_err(|e| e.to_string()),
+                None => Err(String::new()),
+            };
+            self.lyrics = Some((id.clone(), revision, read));
+        }
+        ui.label(egui::RichText::new(format!("{} — {}", now.meta.title, now.meta.artist)).strong());
+        ui.add_space(6.0);
+        let read = self.lyrics.as_ref().map(|(_, _, r)| r.clone()).unwrap_or_else(|| Ok(String::new()));
+        match read {
+            Ok(words) if !words.is_empty() => {
+                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                    ui.add(egui::Label::new(words).wrap());
+                });
+            }
+            Ok(_) => {
+                let text = self.lang.t("This song's file has no lyrics.");
+                ui.label(egui::RichText::new(text).color(t.weak));
+                if ui.button(self.lang.t("Add Lyrics…")).clicked() {
+                    let dialog = self.info_dialog(std::slice::from_ref(&id));
+                    self.act(Action::Open(dialog));
+                }
+            }
+            Err(e) => {
+                ui.label(egui::RichText::new(self.lang.f("The lyrics could not be read: {}", e)).color(t.weak));
+            }
+        }
     }
 
     fn queue_row(
