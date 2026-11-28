@@ -4,7 +4,7 @@ use crate::model::Info;
 use lofty::config::WriteOptions;
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::picture::PictureType;
-use lofty::tag::{Accessor, ItemKey, Tag, TagExt, TagType};
+use lofty::tag::{Accessor, ItemKey, Tag, TagExt};
 use std::path::Path;
 
 /// The largest picture read from a file or a folder.
@@ -108,13 +108,14 @@ pub fn write(file: &Path, info: &Info) -> Result<(), String> {
 }
 
 /// The unsynchronised lyrics inside the file, empty when it has none. Longer lyrics are cut at
-/// [`MAX_LYRICS`].
+/// [`MAX_LYRICS`]. They come from the tag [`read`] takes the other fields from, the one
+/// [`write_lyrics`] writes, so lyrics left in another tag are never shown again.
 pub fn lyrics(file: &Path) -> Result<String, String> {
     let tagged = lofty::read_from_path(file).map_err(|e| e.to_string())?;
-    let tags = tagged.primary_tag().into_iter().chain(tagged.tags());
-    let found = tags
-        .flat_map(|t| [ItemKey::UnsyncLyrics, ItemKey::Lyrics].map(|k| t.get_string(k)))
-        .flatten()
+    let Some(tag) = tagged.primary_tag().or_else(|| tagged.first_tag()) else { return Ok(String::new()) };
+    let found = [ItemKey::UnsyncLyrics, ItemKey::Lyrics]
+        .into_iter()
+        .flat_map(|k| tag.get_strings(k))
         .map(|v| v.trim_matches(['\0', ' ', '\r', '\n', '\t']))
         .find(|v| !v.is_empty())
         .unwrap_or("");
@@ -135,21 +136,6 @@ pub fn write_lyrics(file: &Path, text: &str) -> Result<(), String> {
     let mut tagged = lofty::read_from_path(file).map_err(|e| e.to_string())?;
     let kind = tagged.primary_tag_type();
     let keys = [ItemKey::Lyrics, ItemKey::UnsyncLyrics];
-    // Lyrics in the file's other tags are taken away too, or they would be read again.
-    let others: Vec<TagType> = tagged
-        .tags()
-        .iter()
-        .filter(|t| t.tag_type() != kind && keys.iter().any(|k| t.get(*k).is_some()))
-        .map(Tag::tag_type)
-        .collect();
-    for other in others {
-        if let Some(t) = tagged.tag_mut(other) {
-            for k in keys {
-                t.remove_key(k);
-            }
-            t.save_to_path(file, WriteOptions::default()).map_err(|e| e.to_string())?;
-        }
-    }
     if tagged.primary_tag().is_none() {
         // A new tag of the main kind is read first: it starts with what the file's other tag says.
         let mut fresh = Tag::new(kind);
