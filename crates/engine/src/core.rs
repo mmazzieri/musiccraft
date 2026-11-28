@@ -452,7 +452,7 @@ impl Engine {
                 self.resolving = 0;
                 match url {
                     Ok(url) => {
-                        let n = self.player.load(Input::Url { url, live: true }, Duration::ZERO, false);
+                        let n = self.player.load(Input::Url { url, live: true }, 1.0, Duration::ZERO, false);
                         if let Some(p) = &mut self.playing {
                             p.number = n;
                         }
@@ -896,6 +896,15 @@ impl Engine {
         }
     }
 
+    /// How much louder or softer to play a song, when even volume is on: what its file's tags say,
+    /// for a file on this computer; streams are played as they come.
+    fn gain(&self, input: &Input) -> f32 {
+        match input {
+            Input::File(path) if self.settings.even_volume => musiccraft_library::tags::leveling(path).unwrap_or(1.0),
+            _ => 1.0,
+        }
+    }
+
     /// How an item is played now: a song's file when it is here, else the service in use.
     fn way(&self, item: &Item) -> Result<Way, String> {
         if item.source != Source::Local {
@@ -1009,7 +1018,8 @@ impl Engine {
         }
         match self.input(&item) {
             Ok(input) => {
-                let n = self.player.load(input, Duration::ZERO, false);
+                let gain = self.gain(&input);
+                let n = self.player.load(input, gain, Duration::ZERO, false);
                 if let Some(p) = &mut self.playing {
                     p.number = n;
                 }
@@ -1201,7 +1211,8 @@ impl Engine {
             return;
         }
         if let Ok(input) = self.input(&play) {
-            let n = self.player.preload(input);
+            let gain = self.gain(&input);
+            let n = self.player.preload(input, gain);
             self.preloaded = Some((n, item, play));
         }
     }
@@ -1345,6 +1356,7 @@ impl Engine {
                 self.queue.set_shuffle(on);
                 self.change_settings(|s| s.shuffle = on);
             }
+            Command::EvenVolume { on } => self.change_settings(|s| s.even_volume = on),
             Command::Repeat { mode } => {
                 self.queue.repeat = mode;
                 self.change_settings(|s| s.repeat = mode);

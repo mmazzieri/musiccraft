@@ -41,7 +41,8 @@ app, and it is not affiliated with ArtCraft, Apple or Spotify. Other projects us
 - **Shared folder**: each computer writes only its own catalogue files
   ([format](docs/library-format.md)). Songs that are still only in the cloud are listed without downloading
   them, and downloaded when played.
-- **Playing**: play queue, shuffle, repeat, the next song prepared ahead, a compact player.
+- **Playing**: play queue, shuffle, repeat, the next song prepared ahead, a compact player, and even volume
+  between songs from their ReplayGain or iTunes volume tags (Controls › Even Volume).
 - **Formats**: MP3, AAC and ALAC (M4A), FLAC, Ogg Vorbis, WAV, AIFF, CAF.
 - **Music servers** with the Subsonic or OpenSubsonic API (Navidrome, Gonic, Airsonic and others): albums,
   playlists, search, streaming.

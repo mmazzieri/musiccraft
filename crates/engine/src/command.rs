@@ -44,6 +44,11 @@ pub enum Command {
     Shuffle {
         on: bool,
     },
+    /// Plays songs louder or softer, from the loudness their tags give, so that they sound equally
+    /// loud; from the next song that starts.
+    EvenVolume {
+        on: bool,
+    },
     Repeat {
         mode: Repeat,
     },

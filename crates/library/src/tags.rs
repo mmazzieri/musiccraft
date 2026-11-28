@@ -195,11 +195,87 @@ pub fn picture(file: &Path) -> Option<Vec<u8>> {
     None
 }
 
+/// How much louder or softer to play a song so that songs sound about as loud as each other: a
+/// factor for the samples, from the loudness the file's tags give (ReplayGain, or the volume
+/// adjustment iTunes writes as `iTunNORM`). `None` when the file says nothing about it.
+///
+/// The factor stays between −20 and +10 dB and, when the tags give the song's peak, never makes
+/// the peak clip.
+pub fn leveling(file: &Path) -> Option<f32> {
+    let tagged = lofty::read_from_path(file).ok()?;
+    let mut found = None;
+    for tag in tagged.tags() {
+        let gain = tag.get_string(ItemKey::ReplayGainTrackGain).and_then(parse_db);
+        if let Some(db) = gain {
+            let peak = tag.get_string(ItemKey::ReplayGainTrackPeak).and_then(|v| v.trim().parse::<f32>().ok());
+            found = Some((db, peak));
+            break;
+        }
+        if found.is_none() {
+            found = tag
+                .items()
+                .filter(|i| i.key() == ItemKey::Comment && i.description().eq_ignore_ascii_case("iTunNORM"))
+                .find_map(|i| i.value().text().and_then(itunnorm));
+        }
+    }
+    if found.is_none() && tagged.file_type() == lofty::file::FileType::Mp4 {
+        found = mp4_itunnorm(file);
+    }
+    let (db, peak) = found?;
+    Some(factor(db, peak))
+}
+
+/// The factor for a gain in dB and a peak (1.0 is full scale), within the limits above.
+fn factor(db: f32, peak: Option<f32>) -> f32 {
+    let mut f = 10f32.powf(db.clamp(-20.0, 10.0) / 20.0);
+    if let Some(peak) = peak.filter(|p| p.is_finite() && *p > 0.0) {
+        f = f.min(1.0 / peak);
+    }
+    if f.is_finite() && f > 0.0 { f } else { 1.0 }
+}
+
+/// "-6.54 dB" as -6.54.
+fn parse_db(text: &str) -> Option<f32> {
+    let t = text.trim();
+    let t = t.strip_suffix("dB").or_else(|| t.strip_suffix("db")).unwrap_or(t);
+    t.trim().parse::<f32>().ok().filter(|v| v.is_finite())
+}
+
+/// iTunes' volume adjustment: ten hexadecimal numbers; the first two are the loudness of each
+/// channel in thousandths of a reference level, the seventh and eighth their peaks out of 32768.
+fn itunnorm(text: &str) -> Option<(f32, Option<f32>)> {
+    let values: Vec<u32> = text.split_whitespace().take(10).filter_map(|v| u32::from_str_radix(v, 16).ok()).collect();
+    let loudness = (*values.first()?).max(*values.get(1)?);
+    if loudness == 0 {
+        return None;
+    }
+    let db = -10.0 * (loudness as f32 / 1000.0).log10();
+    let peak = match (values.get(6), values.get(7)) {
+        (Some(a), Some(b)) if (*a).max(*b) > 0 => Some((*a).max(*b) as f32 / 32768.0),
+        _ => None,
+    };
+    db.is_finite().then_some((db, peak))
+}
+
+/// iTunes keeps its adjustment in an MP4 atom of its own, which the common tag leaves out.
+fn mp4_itunnorm(file: &Path) -> Option<(f32, Option<f32>)> {
+    use lofty::config::ParseOptions;
+    use lofty::mp4::{AtomData, AtomIdent, Mp4File};
+    let mut reader = std::io::BufReader::new(std::fs::File::open(file).ok()?);
+    let mp4 = Mp4File::read_from(&mut reader, ParseOptions::new().read_properties(false)).ok()?;
+    let ident = AtomIdent::Freeform { mean: "com.apple.iTunes".into(), name: "iTunNORM".into() };
+    let atom = mp4.ilst()?.get(&ident)?;
+    atom.data().find_map(|d| match d {
+        AtomData::UTF8(t) | AtomData::UTF16(t) => itunnorm(t),
+        _ => None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{from_path, lyrics, read, write_lyrics};
+    use super::{factor, from_path, itunnorm, leveling, lyrics, parse_db, read, write_lyrics};
     use lofty::config::WriteOptions;
-    use lofty::tag::{Accessor, Tag, TagExt, TagType};
+    use lofty::tag::{Accessor, ItemKey, ItemValue, Tag, TagExt, TagItem, TagType};
 
     /// A WAV file of a few silent samples.
     fn wav(path: &std::path::Path) {
@@ -248,5 +324,48 @@ mod tests {
         );
         assert_eq!(from_path("A/B/1979.mp3").title, "1979");
         assert_eq!(from_path("lone.mp3").artist, "");
+    }
+    /// A loud song is turned down and a soft one up, by either kind of tag, and a file that says
+    /// nothing is left alone.
+    #[test]
+    fn leveling_follows_the_tags() {
+        let dir = tempfile::tempdir().unwrap();
+        let plain = dir.path().join("plain.wav");
+        wav(&plain);
+        assert_eq!(leveling(&plain), None);
+
+        let loud = dir.path().join("loud.wav");
+        wav(&loud);
+        let mut tag = Tag::new(TagType::Id3v2);
+        tag.insert_text(ItemKey::ReplayGainTrackGain, "-6.5 dB".to_owned());
+        tag.save_to_path(&loud, WriteOptions::default()).unwrap();
+        assert!(leveling(&loud).unwrap() < 1.0);
+
+        // iTunes' adjustment for a soft song: a level of 300 thousandths on both channels.
+        let soft = dir.path().join("soft.wav");
+        wav(&soft);
+        let mut tag = Tag::new(TagType::Id3v2);
+        let norm = " 0000012C 0000012C 00000000 00000000 00000000 00000000 00001000 00001000 00000000 00000000";
+        let mut item = TagItem::new(ItemKey::Comment, ItemValue::Text(norm.to_owned()));
+        item.set_description("iTunNORM".to_owned());
+        assert!(tag.insert(item));
+        tag.save_to_path(&soft, WriteOptions::default()).unwrap();
+        assert!(leveling(&soft).unwrap() > 1.0);
+    }
+
+    /// No tag makes a song blast or vanish, and a known peak never clips.
+    #[test]
+    fn leveling_stays_within_bounds() {
+        assert!(factor(1000.0, None) <= 10f32.powf(0.5) + 1e-3);
+        assert!(factor(-1000.0, None) >= 0.1 - 1e-3);
+        assert!(factor(8.0, Some(0.9)) * 0.9 <= 1.0 + 1e-6);
+        assert!((factor(f32::NAN, None) - 1.0).abs() < 1e-6);
+        assert_eq!(parse_db("nonsense"), None);
+        assert!(parse_db(" +2.25 dB ").is_some_and(|v| v > 2.0));
+        assert_eq!(itunnorm("0 0 0"), None);
+        assert_eq!(itunnorm("zz"), None);
+        let (louder, _) = itunnorm("00000100 00000100").unwrap();
+        let (softer, _) = itunnorm("00002000 00002000").unwrap();
+        assert!(louder > softer);
     }
 }

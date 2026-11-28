@@ -60,8 +60,8 @@ pub struct State {
 }
 
 enum Cmd {
-    Load { input: Input, number: u64, start: Duration, paused: bool },
-    Preload { input: Input, number: u64 },
+    Load { input: Input, gain: f32, number: u64, start: Duration, paused: bool },
+    Preload { input: Input, gain: f32, number: u64 },
     Opened { number: u64, cancel: stream::Cancel, result: Result<Opened, String> },
     Play,
     Pause,
@@ -107,22 +107,23 @@ impl Player {
         self.tx.send(cmd).ok();
     }
 
-    /// Plays `input` from `start`, instead of what is playing. Returns the song's number.
-    pub fn load(&mut self, input: Input, start: Duration, paused: bool) -> u64 {
+    /// Plays `input` from `start`, instead of what is playing, its samples multiplied by `gain`
+    /// (1.0 leaves them as they are). Returns the song's number.
+    pub fn load(&mut self, input: Input, gain: f32, start: Duration, paused: bool) -> u64 {
         self.number += 1;
         let number = self.number;
         {
             let mut s = lock(&self.state);
             *s = State { status: Status::Loading, current: number, position: start, ..State::default() };
         }
-        self.send(Cmd::Load { input, number, start, paused });
+        self.send(Cmd::Load { input, gain: clean(gain), number, start, paused });
         number
     }
 
     /// Gets the next song ready, to follow the current one without a gap.
-    pub fn preload(&mut self, input: Input) -> u64 {
+    pub fn preload(&mut self, input: Input, gain: f32) -> u64 {
         self.number += 1;
-        self.send(Cmd::Preload { input, number: self.number });
+        self.send(Cmd::Preload { input, gain: clean(gain), number: self.number });
         self.number
     }
 
@@ -154,9 +155,24 @@ impl Player {
 
 type Boxed = Box<dyn Source + Send>;
 
+/// A gain the player can use: a finite factor between 0 and 4, else 1.
+fn clean(gain: f32) -> f32 {
+    if gain.is_finite() && gain > 0.0 { gain.min(4.0) } else { 1.0 }
+}
+
 struct Opened {
     source: Boxed,
     title: Arc<Mutex<String>>,
+}
+
+impl Opened {
+    /// The same song, louder or softer; an even gain leaves the source as it was.
+    fn amplified(self, gain: f32) -> Opened {
+        if (gain - 1.0).abs() < 1e-4 {
+            return self;
+        }
+        Opened { source: Box::new(self.source.amplify(gain)), title: self.title }
+    }
 }
 
 /// A song being opened on a thread of its own, because a slow station can take long to answer.
@@ -240,16 +256,24 @@ impl Thread {
 
     fn handle(&mut self, cmd: Cmd) {
         match cmd {
-            Cmd::Load { input, number, start, paused } => {
+            Cmd::Load { input, gain, number, start, paused } => {
                 self.drop_player();
                 self.current = number;
-                self.begin(input, Opening { number, cancel: stream::Cancel::default(), start, paused, next: false });
+                self.begin(
+                    input,
+                    gain,
+                    Opening { number, cancel: stream::Cancel::default(), start, paused, next: false },
+                );
             }
-            Cmd::Preload { input, number } => {
+            Cmd::Preload { input, gain, number } => {
                 let idle = self.player.as_ref().is_none_or(rodio::Player::empty);
                 if self.next.is_none() && self.opening.is_none() && !idle {
                     let cancel = stream::Cancel::default();
-                    self.begin(input, Opening { number, cancel, start: Duration::ZERO, paused: false, next: true });
+                    self.begin(
+                        input,
+                        gain,
+                        Opening { number, cancel, start: Duration::ZERO, paused: false, next: true },
+                    );
                 }
             }
             Cmd::Opened { number, cancel, result } => {
@@ -309,11 +333,11 @@ impl Thread {
     }
 
     /// Opens a song on another thread, which answers with `Opened`.
-    fn begin(&mut self, input: Input, o: Opening) {
+    fn begin(&mut self, input: Input, gain: f32, o: Opening) {
         let (tx, cancel, number) = (self.tx.clone(), o.cancel.clone(), o.number);
         self.opening = Some(o);
         let spawned = std::thread::Builder::new().name("open".to_owned()).spawn(move || {
-            let result = open(&input, &cancel);
+            let result = open(&input, &cancel).map(|o| o.amplified(gain));
             // The audio thread ends only with the program.
             tx.send(Cmd::Opened { number, cancel, result }).ok();
         });
