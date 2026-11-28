@@ -4,7 +4,7 @@ use crate::model::Info;
 use lofty::config::WriteOptions;
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::picture::PictureType;
-use lofty::tag::{Accessor, ItemKey, Tag, TagExt};
+use lofty::tag::{Accessor, ItemKey, Tag, TagExt, TagItem};
 use std::path::Path;
 
 /// The largest picture read from a file or a folder.
@@ -152,7 +152,16 @@ fn main_tag(tagged: &mut lofty::file::TaggedFile) -> Result<&mut Tag, String> {
         let mut fresh = Tag::new(tagged.primary_tag_type());
         if let Some(other) = tagged.first_tag() {
             for item in other.items() {
-                fresh.push(item.clone());
+                if fresh.push(item.clone()) {
+                    continue;
+                }
+                // Lyrics have a different key in each kind of tag (APE `Lyrics`, ID3v2 USLT).
+                let other_key = match item.key() {
+                    ItemKey::Lyrics => ItemKey::UnsyncLyrics,
+                    ItemKey::UnsyncLyrics => ItemKey::Lyrics,
+                    _ => continue,
+                };
+                fresh.push(TagItem::new(other_key, item.value().clone()));
             }
             for picture in other.pictures() {
                 fresh.push_picture(picture.clone());
