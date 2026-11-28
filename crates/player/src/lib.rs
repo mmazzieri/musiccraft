@@ -13,6 +13,7 @@
     clippy::unreachable
 )]
 
+mod health;
 pub mod stream;
 
 use rodio::decoder::DecoderBuilder;
@@ -173,6 +174,8 @@ struct Thread {
     tx: Sender<Cmd>,
     opening: Option<Opening>,
     device: Option<rodio::stream::MixerDeviceSink>,
+    /// The errors of the device's stream, while it is open.
+    health: health::Health,
     player: Option<rodio::Player>,
     volume: f32,
     current: u64,
@@ -188,6 +191,7 @@ impl Thread {
             tx,
             opening: None,
             device: None,
+            health: health::Health::default(),
             player: None,
             volume: 1.0,
             current: 0,
@@ -322,9 +326,10 @@ impl Thread {
     fn play(&mut self, opened: Opened, cancel: stream::Cancel, o: &Opening) -> Result<(), String> {
         let (start, paused) = (o.start, o.paused);
         if self.device.is_none() {
-            let mut device = rodio::stream::DeviceSinkBuilder::open_default_sink().map_err(|e| e.to_string())?;
+            let (mut device, health) = open_device()?;
             device.log_on_drop(false);
             self.device = Some(device);
+            self.health = health;
         }
         let Some(device) = &self.device else { return Err("no sound device".to_owned()) };
         let player = rodio::Player::connect_new(device.mixer());
@@ -349,6 +354,9 @@ impl Thread {
     }
 
     fn watch(&mut self) {
+        if self.device.is_some() && self.health.broken() {
+            self.lose_device();
+        }
         let Some(p) = &self.player else { return };
         if let Some((number, title, cancel)) = self.next.take() {
             if p.len() <= 1 {
@@ -375,6 +383,48 @@ impl Thread {
             s.status = Status::Ended;
         }
     }
+}
+
+impl Thread {
+    /// Lets a broken device go, so that its stream stops and the next play opens it again.
+    fn lose_device(&mut self) {
+        // A song being opened to replace the current one carries on: it opens the device again
+        // when it is ready. Only a preloaded next song goes with the old player.
+        let replacing = self.opening.take_if(|o| !o.next);
+        self.drop_player();
+        self.opening = replacing;
+        self.device = None;
+        self.health = health::Health::default();
+        if self.opening.is_some() {
+            return;
+        }
+        let mut s = lock(&self.state);
+        // A song asked for but not yet started is left to its own load.
+        if s.current == self.current && matches!(s.status, Status::Playing | Status::Paused | Status::Loading) {
+            s.status = Status::Failed;
+            s.error = "the sound device stopped working; play the song again to retry".to_owned();
+        }
+    }
+}
+
+/// The default output device, or else another one that works, with our own error callback.
+/// Each try has a count of its own, so that what a failed try reported is not held against the
+/// device that opens.
+fn open_device() -> Result<(rodio::stream::MixerDeviceSink, health::Health), String> {
+    use rodio::DeviceTrait;
+    use rodio::cpal::traits::HostTrait;
+    let attempt = |builder: rodio::stream::DeviceSinkBuilder| {
+        let health = health::Health::default();
+        builder.with_error_callback(health.callback()).open_sink_or_fallback().map(|sink| (sink, health))
+    };
+    let first = rodio::stream::DeviceSinkBuilder::from_default_device().and_then(attempt);
+    first.or_else(|original| {
+        let devices = rodio::cpal::default_host().output_devices().map_err(|_| original.to_string())?;
+        devices
+            .filter(|d| d.description().is_ok_and(|desc| desc.driver().is_some_and(|driver| driver != "null")))
+            .find_map(|d| rodio::stream::DeviceSinkBuilder::from_device(d).and_then(attempt).ok())
+            .ok_or_else(|| original.to_string())
+    })
 }
 
 fn open(input: &Input, cancel: &stream::Cancel) -> Result<Opened, String> {
